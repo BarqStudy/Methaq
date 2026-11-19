@@ -19,7 +19,7 @@
 :root[data-palette=amber]{--accent:#f2b46f;--accent-ink:#3a250f}
 :root[data-palette=aurora]{--accent:#8fe9cf;--accent-ink:#172939;--action-fill:linear-gradient(120deg,#8fe9cf,#a8a2fa)}
 :root[data-palette=dusk]{--accent:#f5bd9b;--accent-ink:#3b1b35;--action-fill:linear-gradient(120deg,#ffc888,#df99d9)}
-:root[data-mode=light]{color-scheme:light;--bg:#f4f0e8;--surface:#faf7f0;--panel:#fffdf7;--line:#dcd7cb;--text:#242822;--muted:#5e625a;--gold:#865018;--danger:#9b2939;--accent:#177254;--accent-ink:#fff}
+:root[data-mode=light]{color-scheme:light;--bg:#ffffff;--surface:#f7f8f8;--panel:#ffffff;--line:#dce1df;--text:#242822;--muted:#5e625a;--gold:#865018;--danger:#9b2939;--accent:#177254;--accent-ink:#fff}
 :root[data-mode=light][data-palette=blue]{--accent:#265e9b}
 :root[data-mode=light][data-palette=violet]{--accent:#633daf}
 :root[data-mode=light][data-palette=amber]{--accent:#884a11}

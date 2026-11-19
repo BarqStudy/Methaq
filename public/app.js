@@ -1,4 +1,4 @@
-import { items,sections,palettes,plans,rewards,successReward,storeArt } from './catalog.js';
+import { items,sections,palettes,plans,rewards,successReward,storeArt,defaultAppearance } from './catalog.js';
 import { readRoomInvite,roomInviteUrl } from './invite.js';
 
 const telegramLaunch = /(?:^#|[&?])tgWebApp/.test(location.hash) || new URLSearchParams(location.search).has('tgWebAppStartParam')
@@ -183,7 +183,7 @@ function store() {
 function openAppearance() {
   if (dialog.open && !appearanceOpen) return;
   appearanceOpen = true;
-  const appearance = profile?.appearance || {mode:'dark',palette:'emerald'};
+  const appearance = profile?.appearance || defaultAppearance;
   dialog.innerHTML = `<div class="stack"><div class="appearance-head"><h2>مظهر المنصة</h2>${button('close','إغلاق','plain','x')}</div>
     <section class="appearance-card"><h3>وضع العرض</h3><div class="pair">${Object.entries({light:['نهاري','sun'],dark:['ليلي','moon']}).map(([mode,[label,symbol]])=>
       `<button type="button" class="mode-option ${mode}" data-action="mode" data-value="${mode}" aria-pressed="${mode===appearance.mode}">${icon(symbol)} ${label}</button>`).join('')}</div></section>
@@ -197,7 +197,7 @@ function openAppearance() {
 }
 
 function applyAppearance() {
-  const {mode='dark',palette='emerald'} = profile?.appearance || {};
+  const {mode,palette} = profile?.appearance || defaultAppearance;
   document.documentElement.dataset.mode = mode;
   document.documentElement.dataset.palette = palette;
   const control = document.querySelector('#appearance-toggle');
@@ -206,9 +206,11 @@ function applyAppearance() {
     control.setAttribute('aria-label',label);
     control.title = label;
     control.innerHTML = icon(mode==='dark'?'sun':'moon');
+    const background = mode==='dark' ? '#121417' : '#ffffff';
+    document.querySelector('meta[name="theme-color"]').content = background;
     if (tg?.initData && tg.isVersionAtLeast?.('6.9')) {
-      tg.setHeaderColor?.(mode==='dark'?'#121417':'#f4f0e8');
-      tg.setBackgroundColor?.(mode==='dark'?'#121417':'#f4f0e8');
+      tg.setHeaderColor?.(background);
+      tg.setBackgroundColor?.(background);
     }
   }
 }
@@ -406,7 +408,7 @@ document.addEventListener('click',event=>{
   else if (action==='mode') emit('appearance',{mode:value,palette:profile?.appearance?.palette || 'emerald'});
   else if (action==='palette') {
     if (palettes[value]?.premium && !isPaid()) return toast('هذا اللون متاح مع برو وسبيشل.');
-    emit('appearance',{mode:profile?.appearance?.mode || 'dark',palette:value});
+    emit('appearance',{mode:profile?.appearance?.mode || defaultAppearance.mode,palette:value});
   }
   else if (action==='seePlans') {
     dialog.close(); tab='store'; render();

@@ -23,8 +23,9 @@ test('expires cosmetics and Pro, preserves Special, and records each verified ch
 
   membership.grantCosmetic('101','owl');
   assert.equal(membership.cosmetics('101').owl,now+cosmeticDuration);
-  membership.setAppearance('101','light','blue');
-  assert.deepEqual({...membership.appearance('101')},{mode:'light',palette:'blue'});
+  assert.deepEqual(membership.appearance('101'),{mode:'light',palette:'emerald'});
+  membership.setAppearance('101','dark','blue');
+  assert.deepEqual({...createMembership(db,()=>now).appearance('101')},{mode:'dark',palette:'blue'});
 
   const pro = membership.newInvoice('101','pro');
   const payment = {user:101,amount:50,currency:'XTR',charge:'first-charge'};

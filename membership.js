@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { plans } from './public/catalog.js';
+import { defaultAppearance,plans } from './public/catalog.js';
 
 const day = 86400000;
 export const cosmeticDuration = 3 * day;
@@ -55,7 +55,7 @@ export function createMembership(db, now) {
 
   return {
     planStatus,
-    appearance(player) { return readAppearance.get(player) || { mode:'dark', palette:'emerald' }; },
+    appearance(player) { return readAppearance.get(player) || { ...defaultAppearance }; },
     cosmetics(player) {
       return Object.fromEntries(readCosmetics.all(player,now()).map(row=>[row.item,row.expires_at]));
     },
