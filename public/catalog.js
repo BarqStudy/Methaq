@@ -16,3 +16,27 @@ export const items = {
   horn: [3,'بوق الفوز',35,'megaphone','احتفل مع شريكك بعد النجاح.'],
   coffee: [3,'كوب قهوة',40,'coffee','أرسل بطاقة قهوة لشريكك أثناء الجلسة.']
 };
+
+export const rewards = { achievement:45, cooperation:15, steadfast:25, withdrawal:20 };
+export const successReward = rewards.achievement + rewards.cooperation;
+
+export const palettes = {
+  emerald: { label:'زمردي', swatch:'#55dbae' },
+  blue: { label:'أزرق', swatch:'#7cb9f7' },
+  violet: { label:'بنفسجي', swatch:'#b59aff', premium:true },
+  amber: { label:'كهرماني', swatch:'#f2b46f', premium:true },
+  aurora: { label:'تدرّج الشفق', swatch:'linear-gradient(135deg,#8fe9cf,#9f9af9)', premium:true },
+  dusk: { label:'تدرّج الغروب', swatch:'linear-gradient(135deg,#ffc888,#df99d9)', premium:true }
+};
+
+export const storeArt = {
+  shield:'#65dfba', marathon:'#ffbb78', pause:'#e9a1cb', eraser:'#ac9cf6',
+  rain:'#80bfff', cafe:'#f2be87', forest:'#91db9c', fire:'#ff976f',
+  scholar:'#a6a5ff', owl:'#b5a1eb', steadfast:'#f9bf70', frame:'#f8d080',
+  zap:'#f6dc65', horn:'#ef91b9', coffee:'#dfae8d'
+};
+
+export const plans = {
+  pro: { title:'برو', duration:'٣٠ يومًا', icon:'crown', color:'#b8a0ff' },
+  special: { title:'سبيشل', duration:'مدى الحياة', icon:'gem', color:'#f4c57c' }
+};

@@ -6,7 +6,8 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { Server } from 'socket.io';
 import { Telegraf, Markup } from 'telegraf';
-import { items } from './public/catalog.js';
+import { items,palettes,plans,rewards,successReward } from './public/catalog.js';
+import { createMembership,paidPrices } from './membership.js';
 import { roomInviteUrl } from './public/invite.js';
 
 const { BOT_TOKEN, BOT_USERNAME, APP_SHORT_NAME, PUBLIC_URL } = process.env;
@@ -31,12 +32,14 @@ const rooms = new Map();
 const memberships = new Map();
 const minute = 60000;
 export const clock = { now: Date.now };
+const membership = createMembership(db,() => clock.now());
+const billingEnabled = Boolean(bot && Object.values(paidPrices).some(Boolean));
 const fail = (message) => { throw new Error(message); };
 const query = (sql, ...args) => db.prepare(sql).get(...args);
 const run = (sql, ...args) => db.prepare(sql).run(...args);
 const transaction = (fn) => {
   db.exec('BEGIN');
-  try { fn(); db.exec('COMMIT'); } catch (error) { db.exec('ROLLBACK'); throw error; }
+  try { const result = fn(); db.exec('COMMIT'); return result; } catch (error) { db.exec('ROLLBACK'); throw error; }
 };
 
 function profile(id) {
@@ -49,7 +52,18 @@ function profile(id) {
   const today = new Date(clock.now()).toISOString().slice(0,10);
   const yesterday = new Date(clock.now()-86400000).toISOString().slice(0,10);
   const streak = [today,yesterday].includes(player.last_day) ? player.streak : 0;
-  return { ...player, streak, inventory: JSON.parse(player.inventory), equipped: JSON.parse(player.equipped),
+  const plan = membership.planStatus(id);
+  const cosmetics = membership.cosmetics(id);
+  const appearance = membership.appearance(id);
+  const inventory = JSON.parse(player.inventory);
+  const equipped = JSON.parse(player.equipped);
+  if (plan.tier === 'free') {
+    for (const slot of ['title','frame']) if (!cosmetics[equipped[slot]]) delete equipped[slot];
+    if (!inventory[equipped.theme]) delete equipped.theme;
+    if (palettes[appearance.palette]?.premium) appearance.palette = 'emerald';
+  }
+  return { ...player, streak, inventory, equipped, plan, cosmetics, appearance, now:clock.now(),
+    prices:billingEnabled && !id.startsWith('guest:') ? paidPrices : {},
     ...stats, reliability: stats.completed + stats.left ? Math.round(100*stats.completed/(stats.completed+stats.left)) : 100, history };
 }
 
@@ -93,7 +107,7 @@ function finish(room, leaving) {
     for (const p of room.members) {
       const current = profile(p.id);
       const status = !leaving ? 'success' : leaving === p.id ? 'left' : 'steadfast';
-      const reward = status === 'success' ? 70 : status === 'left' ? -Math.min(20,current.points) : 30;
+      const reward = status === 'success' ? successReward : status === 'left' ? -Math.min(rewards.withdrawal,current.points) : rewards.steadfast;
       const today = new Date(now).toISOString().slice(0,10);
       const streak = status === 'success' ? current.streak + Number(current.last_day !== today) : status === 'left' ? 0 : current.streak;
       run('UPDATE players SET points=points+?, streak=?, last_day=? WHERE id=?', reward, streak, status === 'success' ? today : current.last_day, p.id);
@@ -149,6 +163,7 @@ io.on('connection', (socket) => {
     send(previous);
   }
   const syncProfile = () => io.to(playerRoom).emit('profile',profile(id));
+  const isPaid = (player) => membership.planStatus(player).tier !== 'free';
   socket.emit('hello', { user, profile: profile(id), bot: BOT_USERNAME, shortName: APP_SHORT_NAME });
 
   function action(event, fn) {
@@ -193,6 +208,40 @@ io.on('connection', (socket) => {
       ack({ error:'تعذّر تجهيز رسالة الدعوة من تليجرام. جرّب بعد قليل.' });
     }
   });
+  action('refreshProfile', () => {
+    syncProfile();
+    if (current()) send(current());
+  });
+  action('appearance', ({mode,palette}) => {
+    if (!['dark','light'].includes(mode) || !Object.hasOwn(palettes,palette)) fail('المظهر غير متاح.');
+    if (palettes[palette].premium && !isPaid(id)) fail('هذا اللون متاح مع برو وسبيشل.');
+    membership.setAppearance(id,mode,palette);
+    syncProfile();
+  });
+
+  let nextInvoiceAt = 0;
+  socket.on('membershipInvoice', async (payload, ack) => {
+    if (typeof ack !== 'function') return;
+    const plan = payload?.plan;
+    if (!billingEnabled || !Object.hasOwn(plans,plan) || !paidPrices[plan] || id.startsWith('guest:')) {
+      return ack({error:'شراء هذه العضوية غير متاح الآن.'});
+    }
+    if (membership.planStatus(id).tier === 'special') return ack({error:'عضوية سبيشل مفعّلة مدى الحياة.'});
+    if (clock.now() < nextInvoiceAt) return ack({error:'انتظر قليلًا ثم حاول مجددًا.'});
+    nextInvoiceAt = clock.now()+10000;
+    const title = 'ميثاق التركيز · '+plans[plan].title;
+    try {
+      const url = await bot.telegram.callApi('createInvoiceLink',{
+        title, description:'تفعيل مزايا العضوية لمدة '+plans[plan].duration+'.',
+        payload:membership.newInvoice(id,plan), currency:'XTR', provider_token:'',
+        prices:[{label:title,amount:paidPrices[plan]}]
+      },{signal:AbortSignal.timeout(8000)});
+      nextInvoiceAt = 0;
+      ack({url});
+    } catch {
+      ack({error:'تعذّر فتح فاتورة نجوم تليجرام.'});
+    }
+  });
   function enter(room, goal) {
     const old = current();
     if (old && old.phase !== 'outcome') fail('أكمل غرفتك الحالية أولًا.');
@@ -209,7 +258,7 @@ io.on('connection', (socket) => {
   };
   action('create', ({ minutes, goal, pact }) => {
     if (![25,50,90,120].includes(minutes)) fail('اختر مدة صالحة.');
-    if (minutes === 120 && !profile(id).inventory.marathon) fail('تحتاج إلى تذكرة الماراثون.');
+    if (minutes === 120 && !isPaid(id) && !profile(id).inventory.marathon) fail('تحتاج إلى تذكرة الماراثون.');
     const room = { id:randomUUID().replaceAll('-',''), phase:'lobby', created:clock.now(),
       minutes, pact:String(pact || '').trim().slice(0,160), members:[] };
     enter(room,goalText(goal));
@@ -249,7 +298,7 @@ io.on('connection', (socket) => {
     }
     if (starting && room.minutes === 120) {
       const host = room.members[0].id;
-      use(host,'marathon');
+      if (!isPaid(host)) use(host,'marathon');
       io.to('player:'+host).emit('profile',profile(host));
     }
     p.ready = true;
@@ -296,7 +345,7 @@ io.on('connection', (socket) => {
   });
   action('requestPause', () => {
     const [room] = active();
-    if (clock.now() < room.startsAt || !profile(id).inventory.pause || room.pauseUntil > clock.now() || room.pauseRequest?.until > clock.now()) fail('الاستراحة غير متاحة الآن.');
+    if (clock.now() < room.startsAt || ((!isPaid(id) || room.premiumPauseUsed) && !profile(id).inventory.pause) || room.pauseUntil > clock.now() || room.pauseRequest?.until > clock.now()) fail('الاستراحة غير متاحة الآن.');
     room.pauseRequest = { id, until:clock.now()+30000 };
     send(room);
   });
@@ -305,7 +354,8 @@ io.on('connection', (socket) => {
     const request = room.pauseRequest;
     if (!request || request.id === id || request.until < clock.now()) fail('انتهت صلاحية طلب الاستراحة.');
     if (accept === true) {
-      use(request.id,'pause');
+      if (isPaid(request.id) && !room.premiumPauseUsed) room.premiumPauseUsed = true;
+      else use(request.id,'pause');
       room.pauseUntil = clock.now()+3*minute;
       room.endAt += 3*minute;
       for (const p of room.members) {
@@ -320,17 +370,24 @@ io.on('connection', (socket) => {
   action('buy', ({item}) => {
     if (!Object.hasOwn(items,item)) fail('العنصر غير موجود.');
     const [category,,cost] = items[item];
-    const { points,inventory } = profile(id);
+    const { points,inventory,cosmetics } = profile(id);
+    if ([1,2].includes(category) && isPaid(id)) fail('العنصر متاح لك ضمن العضوية.');
     if (points < cost) fail('رصيدك لا يكفي لهذا العنصر.');
-    if ([1,2].includes(category) && inventory[item]) fail('هذا العنصر موجود في مخزونك.');
-    inventory[item]=(inventory[item]||0)+1;
-    run('UPDATE players SET points=points-?,inventory=? WHERE id=?',cost,JSON.stringify(inventory),id);
+    if ((category === 1 && inventory[item]) || (category === 2 && cosmetics[item])) fail('هذا العنصر موجود في مخزونك.');
+    inventory[item] = category === 2 ? 1 : (inventory[item] || 0)+1;
+    transaction(() => {
+      if (category === 2) membership.grantCosmetic(id,item);
+      run('UPDATE players SET points=points-?,inventory=? WHERE id=?',cost,JSON.stringify(inventory),id);
+    });
     syncProfile();
   });
   action('equip', ({item}) => {
-    const {inventory,equipped} = profile(id);
-    if (!Object.hasOwn(items,item) || !inventory[item] || ![1,2].includes(items[item][0])) fail('العنصر غير متاح.');
-    const slot = items[item][0]===1 ? 'theme' : item==='frame' ? 'frame' : 'title';
+    if (!Object.hasOwn(items,item) || ![1,2].includes(items[item][0])) fail('العنصر غير متاح.');
+    const { inventory,cosmetics } = profile(id);
+    const category = items[item][0];
+    if (!isPaid(id) && !(category === 1 ? inventory[item] : cosmetics[item])) fail('العنصر غير متاح.');
+    const equipped = JSON.parse(query('SELECT equipped FROM players WHERE id=?',id).equipped);
+    const slot = category === 1 ? 'theme' : item === 'frame' ? 'frame' : 'title';
     equipped[slot]=equipped[slot]===item ? null : item;
     run('UPDATE players SET equipped=? WHERE id=?',JSON.stringify(equipped),id);
     syncProfile();
@@ -361,10 +418,37 @@ app.use('/icons',express.static('node_modules/lucide-static/icons'));
 app.use('/fonts',express.static('node_modules/@fontsource/ibm-plex-sans-arabic/files'));
 app.use(express.static('public'));
 http.listen(Number(process.env.PORT || 3000),'0.0.0.0',() => console.log('Methaq listening'));
-if (bot && PUBLIC_URL && process.env.RUN_BOT === '1') {
-  bot.start(ctx => ctx.reply('ابدأ جلسة تركيز ثنائية مع ميثاق التركيز.', Markup.inlineKeyboard([Markup.button.webApp('افتح ميثاق التركيز',PUBLIC_URL)])));
-  bot.help(ctx => ctx.reply('افتح التطبيق عبر /start وأنشئ غرفة وشارك الدعوة مع شريكك.'));
-  bot.launch().catch(() => console.error('تعذّر تشغيل بوت تليجرام. تحقّق من الاتصال وإعدادات البوت.'));
-  process.once('SIGINT', () => bot.stop('SIGINT'));
-  process.once('SIGTERM', () => bot.stop('SIGTERM'));
+if (bot && (billingEnabled || (PUBLIC_URL && process.env.RUN_BOT === '1'))) {
+  if (PUBLIC_URL && process.env.RUN_BOT === '1') {
+    bot.start(ctx => ctx.reply('ابدأ جلسة تركيز ثنائية مع ميثاق التركيز.', Markup.inlineKeyboard([Markup.button.webApp('افتح ميثاق التركيز',PUBLIC_URL)])));
+    bot.help(ctx => ctx.reply('افتح التطبيق عبر /start وأنشئ غرفة وشارك الدعوة مع شريكك.'));
+  }
+  if (billingEnabled) {
+    bot.command('paysupport', ctx => ctx.reply(process.env.PAYMENT_SUPPORT || 'للمساعدة بخصوص عضويتك، تواصل مع مشرف ميثاق التركيز وأرسل معرّف عملية الشراء الظاهر في تليجرام.'));
+    bot.on('pre_checkout_query', async ctx => {
+      const checkout = ctx.update.pre_checkout_query;
+      const valid = membership.validateCheckout(checkout.invoice_payload,{
+        user:checkout.from.id, amount:checkout.total_amount, currency:checkout.currency
+      });
+      await ctx.telegram.answerPreCheckoutQuery(checkout.id,valid,valid ? undefined : 'هذه الفاتورة غير متاحة. افتح التطبيق وابدأ من جديد.');
+    });
+    bot.on('successful_payment', ctx => {
+      const payment = ctx.message.successful_payment;
+      const player = membership.fulfill(payment.invoice_payload,{
+        user:ctx.from.id, amount:payment.total_amount, currency:payment.currency,
+        charge:payment.telegram_payment_charge_id
+      },transaction);
+      if (player) {
+        io.to('player:'+player).emit('profile',profile(player));
+        const room = rooms.get(memberships.get(player));
+        if (room) send(room);
+      }
+    });
+  }
+  bot.catch(error => { console.error('تعذّر معالجة تحديث تليجرام.',error.name); throw error; });
+  bot.launch({allowedUpdates:billingEnabled ? ['message','pre_checkout_query'] : ['message']}).catch(() => console.error('تعذّر تشغيل بوت تليجرام. تحقّق من الاتصال وإعدادات البوت.'));
+  for (const signal of ['SIGINT','SIGTERM']) process.once(signal,() => {
+    try { bot.stop(signal); } catch { /* Polling has not started. */ }
+    http.close();
+  });
 }

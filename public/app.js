@@ -1,4 +1,4 @@
-import { items,sections } from './catalog.js';
+import { items,sections,palettes,plans,rewards,successReward,storeArt } from './catalog.js';
 import { readRoomInvite,roomInviteUrl } from './invite.js';
 
 const telegramLaunch = /(?:^#|[&?])tgWebApp/.test(location.hash) || new URLSearchParams(location.search).has('tgWebAppStartParam')
@@ -22,6 +22,7 @@ if (tg?.initData) {
 const page = document.querySelector('#page');
 const dialog = document.querySelector('#dialog');
 const notice = document.querySelector('#notice');
+dialog.addEventListener('close',()=>{ appearanceOpen=false; });
 dialog.addEventListener('cancel',event=>{ if (dialog.querySelector('#check-deadline')) event.preventDefault(); });
 const invite = readRoomInvite({ startParam:tg?.initDataUnsafe?.start_param, hash:location.hash, search:location.search });
 const icon = (name) => '<i aria-hidden="true" data-icon="'+name+'" style="--icon:url(/icons/'+name+'.svg)"></i>';
@@ -31,6 +32,9 @@ const num = (v) => Number(v || 0).toLocaleString('ar',{numberingSystem:'arab'});
 let room, socket, user, profile, bot, shortName, clockOffset = 0, chosen = 25, tab = 'home', category = 0, goal = '', pact = '', inviteDismissed = false;
 let viewKey, noticeTimeout, revisited, lastActivity = 0, lastCheck, audio, ambience;
 let preparingInvite = false;
+let appearanceOpen = false, checkoutOpen = false, expiryTimer;
+const isPaid = () => ['pro','special'].includes(profile?.plan?.tier);
+const marathonAvailable = () => isPaid() || profile?.inventory?.marathon;
 const guestId = sessionStorage.getItem('methaq-guest') || Array.from(crypto.getRandomValues(new Uint8Array(18)), b=>b.toString(16).padStart(2,'0')).join('');
 sessionStorage.setItem('methaq-guest',guestId);
 const name = new URLSearchParams(location.search).get('name') || 'ضيف ميثاق';
@@ -45,6 +49,7 @@ function emit(event,payload={}) {
   socket.timeout(5000).emit(event,payload,(error,response) => {
     if (error || response?.error) toast(response?.error || 'تعذر الاتصال بالخادم.');
     else if (['buy','equip','protect'].includes(event)) toast('تم تحديث مخزونك.');
+    else if (event==='appearance') toast('تم حفظ المظهر.');
   });
 }
 function avatar(person) {
@@ -56,10 +61,15 @@ function avatar(person) {
 }
 function account() {
   const p = profile || {reliability:100};
-  document.querySelector('#account').innerHTML = `<div class="identity">${avatar({...user,equipped:p.equipped})}<span>${esc(user?.name || 'ضيف ميثاق')}<small>${items[p.equipped?.title]?.[1] || 'رفيق تركيز'}</small></span></div>
+  const accountElement = document.querySelector('#account');
+  const content = `<div class="identity">${avatar({...user,equipped:p.equipped})}<span>${esc(user?.name || 'ضيف ميثاق')}<small>${items[p.equipped?.title]?.[1] || 'رفيق تركيز'}</small></span></div>
   <span class="metric" aria-label="أيام السلسلة">${icon('flame').replace('<i ','<i class="gold" ')} ${num(p.streak)}</span>
   <span class="metric" aria-label="نسبة الالتزام"><span class="mint">${icon('shield-check')}</span>${num(p.reliability)}٪</span>
   <span class="metric gold" aria-label="رصيد النقاط">${icon('sparkles')} ${num(p.points)}</span>`;
+  if (accountElement.dataset.content !== content) {
+    accountElement.innerHTML = content;
+    accountElement.dataset.content = content;
+  }
 }
 const button = (action,label,type='secondary',symbol='',value='') => `<button type="button" class="${type}" data-action="${action}" data-value="${value}">${symbol ? icon(symbol):''}${label}</button>`;
 const heading = (title,caption='') => `<div class="heading"><h1>${title}</h1>${caption?'<p>'+caption+'</p>':''}</div>`;
@@ -74,14 +84,14 @@ function home() {
     <p>${joining?'اكتب هدفك للانضمام إلى شريكك في غرفة التركيز.':'حدّد هدفك، وادعُ شريكك، وابدآ جلسة تركيز تلتزمان بها معًا.'}</p></section>
     <div class="grid-home">
     <form class="panel form-main" id="session-form"><div class="panel-title"><span class="tile-icon">${icon('sliders-horizontal')}</span><div><h2>${joining?'انضم إلى الجلسة':'إعداد الجلسة'}</h2><p>${joining?'أخبر شريكك بما تنوي إنجازه.':'اختر المدة واكتب ما تنوي إنجازه.'}</p></div></div>
-    ${joining?'':`<div class="field">مدة الجلسة<div class="durations">${[25,50,90,120].map(m=>`<button type="button" class="duration ${m===chosen?'on':''}" data-action="duration" data-value="${m}" aria-pressed="${m===chosen}"><strong>${num(m)}</strong> دقيقة${m===120&&!profile?.inventory?.marathon?icon('lock-keyhole'):''}</button>`).join('')}</div></div>`}
+    ${joining?'':`<div class="field">مدة الجلسة<div class="durations">${[25,50,90,120].map(m=>`<button type="button" class="duration ${m===chosen?'on':''}" data-action="duration" data-value="${m}" aria-pressed="${m===chosen}"><strong>${num(m)}</strong> دقيقة${m===120&&!marathonAvailable()?icon('lock-keyhole'):''}</button>`).join('')}</div></div>`}
     <label class="field">هدف الجلسة<input required maxlength="160" name="goal" placeholder="ماذا ستنجز في هذه الجلسة؟" value="${esc(goal)}"></label>
     ${joining?'':`<label class="field">ميثاق تشجيعي <small class="optional">اختياري</small><input maxlength="160" name="pact" placeholder="مثال: نلخّص فصلًا بعد الجلسة" value="${esc(pact)}"></label>`}
     <button class="primary wide">${icon(joining?'users':'plus')}${joining?'الانضمام إلى الغرفة':'إنشاء غرفة وادعُ شريكك'}</button>
     ${joining?button('ignore','العودة للرئيسية','plain'):''}</form>
     <section class="panel preview"><div class="preview-top"><h2>معاينة الجلسة</h2><span class="tag"><span class="dot"></span> جلسة ثنائية</span></div>
     ${dial(chosen+':00','على استعداد للتركيز')}<p class="preview-note">${icon('users')} يبدأ المؤقت بعد موافقة الطرفين على الميثاق</p></section></div>
-    <div class="pact-bar"><span class="tile-icon">${icon('shield-check')}</span><div><strong>ميثاق الجلسة</strong><p>عند إتمام الجلسة، تمنح المنصة كل طرف ٥٠ نقطة إنجاز و٢٠ نقطة تعاون.</p></div><span class="tag">${icon('sparkles')} مكافأة المنصة</span></div>`;
+    <div class="pact-bar"><span class="tile-icon">${icon('shield-check')}</span><div><strong>ميثاق الجلسة</strong><p>عند إتمام الجلسة، تمنح المنصة كل طرف ${num(rewards.achievement)} نقطة إنجاز و${num(rewards.cooperation)} نقطة تعاون.</p></div><span class="tag">${icon('sparkles')} مكافأة المنصة</span></div>`;
 }
 function person(p, active=false) {
   if (!p) return `<article class="panel person">${avatar()}<div><h3>شريك التركيز</h3><p>بانتظار الانضمام</p></div></article>`;
@@ -96,7 +106,7 @@ function lobby() {
   const me = room.members.find(p=>p.id===user?.id);
   return `<div class="inner">${heading('غرفة الانتظار','جلسة تركيز لمدة '+num(room.minutes)+' دقيقة')}<div class="stack">${pair(false)}
   ${invitePanel()}
-  <section class="panel"><h2>ميثاق الجلسة</h2><p class="bodycopy">أتعهد بالبقاء حاضرًا والتركيز على هدفي. تمنحنا المنصة ٥٠ نقطة إنجاز و٢٠ نقطة تعاون لكل منا عند الإتمام. عند الانسحاب تُحرق حتى ٢٠ نقطة من رصيد المنسحب، وتمنح المنصة شريكه ٣٠ نقطة صمود.</p>
+  <section class="panel"><h2>ميثاق الجلسة</h2><p class="bodycopy">أتعهد بالبقاء حاضرًا والتركيز على هدفي. تمنحنا المنصة ${num(rewards.achievement)} نقطة إنجاز و${num(rewards.cooperation)} نقطة تعاون لكل منا عند الإتمام. عند الانسحاب تُحرق حتى ٢٠ نقطة من رصيد المنسحب، وتمنح المنصة شريكه ${num(rewards.steadfast)} نقطة صمود.</p>
   ${room.pact?'<p class="bodycopy">الميثاق التشجيعي: '+esc(room.pact)+'</p>':''}</section>
   ${me?.ready?'<p class="tag">وافقت على الميثاق. بانتظار شريكك.</p>':button('ready','أوافق وأنا مستعد','primary','lock-keyhole')}
   ${button('leaveLobby','مغادرة الغرفة','plain','log-out')}</div></div>`;
@@ -111,7 +121,7 @@ function active() {
   <section class="panel stack"><div class="actions" aria-label="أصوات الخلفية">${[['rain','مطر'],['cafe','مقهى'],['white','ضوضاء بيضاء']].map(([k,v])=>button('sound',v,ambience===k?'primary':'secondary','volume-2',k)).join('')}</div>
   <div class="actions">${partner?.idle?button('signal','إرسال تنبيه اهتزاز','secondary','zap','nudge'):''}
   ${inventory.zap?button('signal','صعقة التركيز','secondary','zap','zap'):''}${inventory.coffee?button('signal','إهداء كوب قهوة','secondary','coffee','coffee'):''}
-  ${inventory.pause?button('requestPause','استراحة محارب','secondary','timer-reset'):''}${button('withdraw','انسحاب','plain','log-out')}</div></section></div></div>`;
+  ${inventory.pause || (isPaid() && !room.premiumPauseUsed)?button('requestPause','استراحة محارب','secondary','timer-reset'):''}${button('withdraw','انسحاب','plain','log-out')}</div></section></div></div>`;
 }
 const labels = { success:'جلسة مكتملة', steadfast:'صمود الشريك', left:'انسحاب' };
 function outcome() {
@@ -119,9 +129,9 @@ function outcome() {
   if (!result) return '';
   const succeeded = result.status==='success';
   const left = result.status==='left';
-  return `<div class="inner">${heading(succeeded?'أتممتما الميثاق!':left?'انتهت الجلسة بانسحابك':'صمدت حتى النهاية',succeeded?'أحسنتما الالتزام بجلسة التركيز.':left?'يمكنك بدء جلسة جديدة عندما تكون مستعدًا.':'منحتك المنصة ٣٠ نقطة تعويض صمود.') }<div class="stack">
+  return `<div class="inner">${heading(succeeded?'أتممتما الميثاق!':left?'انتهت الجلسة بانسحابك':'صمدت حتى النهاية',succeeded?'أحسنتما الالتزام بجلسة التركيز.':left?'يمكنك بدء جلسة جديدة عندما تكون مستعدًا.':'منحتك المنصة '+num(result.reward)+' نقطة تعويض صمود.') }<div class="stack">
   <section class="panel stack"><strong class="mint">${icon('sparkles')} ${result.reward>0?'+':''}${num(result.reward)} نقطة</strong>
-  ${succeeded ? `<p class="bodycopy">٥٠ نقطة إنجاز + ٢٠ نقطة تعاون · سلسلة الالتزام ${num(profile.streak)} يوم</p><h2>هل أنجزت هدفك؟</h2><div class="actions">${button('result','نعم',result.goal_done===1?'primary':'secondary','','yes')}${button('result','ليس بعد',result.goal_done===0?'primary':'secondary','','no')}</div>
+  ${succeeded ? `<p class="bodycopy">${result.reward===successReward ? num(rewards.achievement)+' نقطة إنجاز + '+num(rewards.cooperation)+' نقطة تعاون · ' : ''}سلسلة الالتزام ${num(profile.streak)} يوم</p><h2>هل أنجزت هدفك؟</h2><div class="actions">${button('result','نعم',result.goal_done===1?'primary':'secondary','','yes')}${button('result','ليس بعد',result.goal_done===0?'primary':'secondary','','no')}</div>
   ${button('shareCard','مشاركة بطاقة الإنجاز','primary','share-2')}${profile.inventory.horn?button('signal','بوق الفوز','secondary','megaphone','horn'):''}` : ''}
   ${left && profile.inventory.shield && result.old_streak && !profile.streak ? button('protect','استخدام درع الحماية','secondary','shield','shield'):''}
   </section>${button('reset','جلسة جديدة','secondary','plus')}</div></div>`;
@@ -132,22 +142,103 @@ function stats() {
   <div class="stack"><div class="stat-grid">${[[p.completed,'جلسات مكتملة'],[p.minutes,'دقائق تركيز'],[p.streak,'أيام متتالية']].map(([n,l])=>`<div class="panel"><strong>${num(n)}</strong><p>${l}</p></div>`).join('')}</div>
   <section class="panel"><h2>سجل الجلسات</h2>${p.history?.length?p.history.map(r=>`<div class="list-row"><div><strong>${labels[r.status]}</strong><p class="muted">${esc(r.date.slice(0,10))} · ${num(r.minutes)} دقيقة</p></div><span class="${r.reward<0?'gold':'mint'}">${r.reward>0?'+':''}${num(r.reward)} نقطة</span></div>`).join(''):'<p class="bodycopy">سيظهر سجلّك بعد أول جلسة.</p>'}</section></div></div>`;
 }
+function memberships() {
+  const active = profile?.plan?.tier;
+  const until = profile?.plan?.until;
+  return `<section class="membership-section stack" id="memberships" aria-labelledby="membership-title">
+    <div><h2 id="membership-title">عضويات ميثاق</h2><p class="bodycopy">ألوان وتدرجات حصرية، كل الألقاب والثيمات، جلسات ١٢٠ دقيقة واستراحة واحدة لكل جلسة بموافقة شريكك.</p>
+    ${active==='pro' && until ? '<p class="bodycopy">برو مفعّل حتى '+new Date(until).toLocaleDateString('ar')+'</p>' : ''}</div>
+    <div class="store-grid">${Object.entries(plans).map(([key,plan])=>{
+      const price = profile?.prices?.[key];
+      const status = active===key ? 'مفعّل' : active==='special' ? 'مشمول مع سبيشل' : '';
+      const action = price && active!=='special' ? button('checkout',key==='pro' && status?'تمديد برو':'اختيار '+plan.title,'primary','star',key) : '';
+      return `<article class="panel plan-card" style="--art:${plan.color}"><span class="art-plain">${icon(plan.icon)}</span>
+        <h3>${plan.title}</h3><p>${plan.duration}</p>
+        ${status?'<p class="mint">'+status+'</p>':''}
+        ${active!=='special'?'<p class="gold">'+(price?num(price)+' نجمة تليجرام':'الشراء غير متاح حاليًا')+'</p>':''}
+        ${action}${key==='pro'?'<small class="muted">دفعة واحدة لكل ٣٠ يومًا</small>':''}</article>`;
+    }).join('')}</div></section>`;
+}
 function store() {
   const p = profile;
-  return `<div class="inner">${heading('متجر ميثاق','رصيدك الحالي '+num(p?.points)+' نقطة')}
+  return `<div class="inner store-page">${heading('متجر ميثاق','رصيدك الحالي '+num(p?.points)+' نقطة')}
+  ${memberships()}
   <div class="filters">${sections.map((x,i)=>button('filter',x,i===category?'selected':'','',i)).join('')}</div>
   <div class="store-grid">${Object.entries(items).filter(([,x])=>x[0]===category).map(([key,[group,label,cost,symbol,desc]])=>{
     const count = p?.inventory[key] || 0;
+    const expires = p?.cosmetics?.[key];
+    const collectible = [1,2].includes(group);
+    const available = collectible && (isPaid() || (group===2 ? expires : count));
     const equipped = Object.values(p?.equipped || {}).includes(key);
-    return `<article class="panel store-item"><span class="tile-icon">${icon(symbol)}</span><h3>${label}</h3><p class="bodycopy">${desc}</p>
-    <span class="gold">${num(cost)} نقطة${count?' · في المخزون '+num(count):''}</span>
-    ${[1,2].includes(group)&&count?button('equip',equipped?'إلغاء التفعيل':'تفعيل',equipped?'primary':'secondary','',key):button('buy','شراء','secondary','',key)}
-    ${key==='eraser'&&count?button('protect','استخدام','plain','',key):''}</article>`;
+    const detail = collectible && isPaid() ? 'مشمول في العضوية' : group===2 && expires
+      ? 'متاح حتى '+new Date(expires).toLocaleDateString('ar') : num(cost)+' نقطة'+(group===2?' · صالح ٣ أيام':count?' · في المخزون '+num(count):'');
+    return `<article class="panel store-item">
+      <div class="store-art art-${key}" style="--art:${storeArt[key]}"><span aria-hidden="true" class="art-orbit"></span>${icon(symbol)}${icon('sparkles')}</div>
+      <h3>${label}</h3><p class="bodycopy">${desc}</p><span class="gold">${detail}</span>
+      ${available?button('equip',equipped?'إلغاء التفعيل':'تفعيل',equipped?'primary':'secondary','',key):button('buy','شراء','secondary','',key)}
+      ${key==='eraser'&&count?button('protect','استخدام','plain','',key):''}</article>`;
   }).join('')}</div></div>`;
+}
+
+function openAppearance() {
+  if (dialog.open && !appearanceOpen) return;
+  appearanceOpen = true;
+  const appearance = profile?.appearance || {mode:'dark',palette:'emerald'};
+  dialog.innerHTML = `<div class="stack"><div class="appearance-head"><h2>مظهر المنصة</h2>${button('close','إغلاق','plain','x')}</div>
+    <section class="appearance-card"><h3>وضع العرض</h3><div class="pair">${Object.entries({light:['نهاري','sun'],dark:['ليلي','moon']}).map(([mode,[label,symbol]])=>
+      `<button type="button" class="mode-option ${mode}" data-action="mode" data-value="${mode}" aria-pressed="${mode===appearance.mode}">${icon(symbol)} ${label}</button>`).join('')}</div></section>
+    <section class="appearance-card"><h3>الألوان</h3><div class="palette-grid">${Object.entries(palettes).map(([key,palette])=>{
+      const locked = palette.premium && !isPaid();
+      return `<button type="button" class="palette-option" data-action="palette" data-value="${key}" aria-pressed="${appearance.palette===key}">
+        <span class="swatch" style="background:${palette.swatch}">${locked?icon('lock-keyhole'):''}</span>${palette.label}</button>`;
+    }).join('')}</div>${!isPaid()?'<p class="bodycopy">الزمردي والأزرق متاحان للجميع. التدرجات والألوان الأخرى مع برو وسبيشل.</p>':''}</section>
+    ${!isPaid() && room?.phase!=='active' ? button('seePlans','عرض العضويات','secondary','crown') : ''}</div>`;
+  if (!dialog.open) dialog.showModal();
+}
+
+function applyAppearance() {
+  const {mode='dark',palette='emerald'} = profile?.appearance || {};
+  document.documentElement.dataset.mode = mode;
+  document.documentElement.dataset.palette = palette;
+  const control = document.querySelector('#appearance-toggle');
+  const label = mode==='dark'?'الوضع النهاري':'الوضع الليلي';
+  if (control.getAttribute('aria-label') !== label) {
+    control.setAttribute('aria-label',label);
+    control.title = label;
+    control.innerHTML = icon(mode==='dark'?'sun':'moon');
+    if (tg?.initData && tg.isVersionAtLeast?.('6.9')) {
+      tg.setHeaderColor?.(mode==='dark'?'#121417':'#f4f0e8');
+      tg.setBackgroundColor?.(mode==='dark'?'#121417':'#f4f0e8');
+    }
+  }
+}
+
+async function checkout(plan, control) {
+  if (checkoutOpen || !profile?.prices?.[plan]) return;
+  if (!tg?.openInvoice || !socket?.connected) return toast('افتح التطبيق داخل تليجرام لإتمام الاشتراك.');
+  checkoutOpen = true;
+  control.disabled = true;
+  try {
+    const {url,error} = await socket.timeout(10000).emitWithAck('membershipInvoice',{plan});
+    if (!url) throw new Error(error || 'تعذّر إنشاء فاتورة العضوية.');
+    tg.openInvoice(url,status=>{
+      checkoutOpen = false;
+      control.disabled = false;
+      if (status==='paid' || status==='pending') {
+        emit('refreshProfile');
+        toast(status==='paid'?'تم الدفع. سيظهر تفعيل العضوية بعد تأكيد تليجرام.':'عملية الدفع قيد التأكيد.');
+      } else if (status==='failed') toast('تعذّر إتمام الدفع.');
+    });
+  } catch (error) {
+    checkoutOpen = false;
+    control.disabled = false;
+    toast(error.message || 'تعذّر فتح فاتورة تليجرام.');
+  }
 }
 const serverNow = () => Date.now()+clockOffset;
 function render(force=false) {
   account();
+  applyAppearance();
   document.querySelectorAll('[data-tab]').forEach(b => {
     b.classList.toggle('selected',b.dataset.tab===tab);
     if (b.dataset.tab===tab) b.setAttribute('aria-current','page'); else b.removeAttribute('aria-current');
@@ -161,6 +252,10 @@ function render(force=false) {
       const selector = previous?.dataset.action && '[data-action="'+previous.dataset.action+'"][data-value="'+previous.dataset.value+'"]';
       page.innerHTML = content;
       page.dataset.content = content;
+      if (key!==viewKey && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        page.animate([{opacity:.55,transform:'translateY(6px)'},{opacity:1,transform:'translateY(0)'}],
+          {duration:240,easing:'ease-out'});
+      }
       if (selector) page.querySelector(selector)?.focus({preventScroll:true});
     }
     viewKey = key;
@@ -184,6 +279,7 @@ function updateClock() {
   digits.closest('.dial').style.setProperty('--progress',Math.min(100,remaining/(room.minutes*60000)*100));
   document.querySelectorAll('[data-exit]').forEach(e=>e.textContent=num(Math.max(0,Math.ceil((Number(e.dataset.exit)-now)/1000)))+' ث');
   const check = room.members.find(p=>p.id===user?.id)?.checkUntil;
+  if (check > now && check!==lastCheck && appearanceOpen) dialog.close();
   if (check > now && check!==lastCheck && !dialog.open) {
     lastCheck = check;
     modal('هل ما زلت مركزًا؟','أكد حضورك خلال ٣٠ ثانية.',button('check','نعم، ما زلت مركزًا','primary','check'));
@@ -281,7 +377,7 @@ async function shareCard() {
   ctx.fillStyle='#121417';ctx.fillRect(0,0,720,1280);
   ctx.strokeStyle='#58dfb0';ctx.lineWidth=3;ctx.strokeRect(52,52,616,1176);
   ctx.direction='rtl';ctx.textAlign='center';
-  for (const [label,y,size,color] of [['ميثاق التركيز',245,44,'#58dfb0'],['أتممتُ ميثاق التركيز',520,49,'#f3f4f6'],[num(room.minutes)+' دقيقة تركيز ثنائي',635,39,'#f3f4f6'],['+'+num(70)+' نقطة من المنصة',735,33,'#58dfb0'],['LOCK-IN DUO',1080,28,'#a1a6b0']]) {
+  for (const [label,y,size,color] of [['ميثاق التركيز',245,44,'#58dfb0'],['أتممتُ ميثاق التركيز',520,49,'#f3f4f6'],[num(room.minutes)+' دقيقة تركيز ثنائي',635,39,'#f3f4f6'],['+'+num(profile?.history.find(result=>result.room===room.id)?.reward || successReward)+' نقطة من المنصة',735,33,'#58dfb0'],['LOCK-IN DUO',1080,28,'#a1a6b0']]) {
     ctx.fillStyle=color;ctx.font='700 '+size+'px Plex, Arial';ctx.fillText(label,360,y);
   }
   const file = new File([await new Promise(resolve=>canvas.toBlob(resolve))],'methaq-achievement.png',{type:'image/png'});
@@ -304,9 +400,20 @@ document.addEventListener('click',event=>{
   if (!b) return;
   const {action,value}=b.dataset;
   if (action==='duration') {
-    if (+value===120 && !profile?.inventory?.marathon) return toast('تحتاج إلى تذكرة الماراثون من المتجر.');
+    if (+value===120 && !marathonAvailable()) return toast('تحتاج إلى تذكرة الماراثون من المتجر.');
     chosen=+value; render(true);
-  } else if (action==='ignore') { inviteDismissed=true; render(true); }
+  } else if (action==='appearanceMenu') openAppearance();
+  else if (action==='mode') emit('appearance',{mode:value,palette:profile?.appearance?.palette || 'emerald'});
+  else if (action==='palette') {
+    if (palettes[value]?.premium && !isPaid()) return toast('هذا اللون متاح مع برو وسبيشل.');
+    emit('appearance',{mode:profile?.appearance?.mode || 'dark',palette:value});
+  }
+  else if (action==='seePlans') {
+    dialog.close(); tab='store'; render();
+    document.querySelector('#memberships')?.scrollIntoView({block:'start'});
+  }
+  else if (action==='checkout') checkout(value,b);
+  else if (action==='ignore') { inviteDismissed=true; render(true); }
   else if (action==='invite') shareInvite(b);
   else if (action==='copyInvite') copyInvite();
   else if (action==='filter') { category=+value; render(true); }
@@ -345,12 +452,25 @@ render();
 socket = window.io({auth:{initData:tg?.initData,guest:guestId,name}});
 socket.on('connect_error', error=>toast(error.message));
 socket.on('disconnect',()=>toast('انقطع الاتصال. جارٍ إعادة المحاولة.'));
-socket.on('hello', data=>{
-  ({user,profile,bot,shortName}=data);
+function updateProfile(data) {
+  const changed = JSON.stringify(profile?.appearance) !== JSON.stringify(data.appearance) || profile?.plan?.tier !== data.plan?.tier;
+  profile = data;
+  clearTimeout(expiryTimer);
+  const expires = [data.plan?.until,...Object.values(data.cosmetics || {})].filter(value=>value>data.now);
+  if (expires.length) expiryTimer = setTimeout(()=>emit('refreshProfile'),Math.min(2147483647,Math.min(...expires)-data.now+250));
   render(true);
+  if (changed && appearanceOpen && dialog.open) {
+    const focused = dialog.querySelector(':focus')?.dataset;
+    openAppearance();
+    if (focused?.action && focused?.value) dialog.querySelector('[data-action="'+focused.action+'"][data-value="'+focused.value+'"]')?.focus();
+  }
+}
+socket.on('hello', data=>{
+  ({user,bot,shortName}=data);
+  updateProfile(data.profile);
   presence();
 });
-socket.on('profile', data=>{ profile=data; render(true); });
+socket.on('profile',updateProfile);
 socket.on('room', next=>{
   if (invite && !inviteDismissed && next?.phase==='outcome' && next.id!==invite) return;
   const previous=room;
