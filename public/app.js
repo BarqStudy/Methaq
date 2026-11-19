@@ -30,6 +30,7 @@ const esc = (v) => String(v ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;
 const num = (v) => Number(v || 0).toLocaleString('ar',{numberingSystem:'arab'});
 let room, socket, user, profile, bot, shortName, clockOffset = 0, chosen = 25, tab = 'home', category = 0, goal = '', pact = '', inviteDismissed = false;
 let viewKey, noticeTimeout, revisited, lastActivity = 0, lastCheck, audio, ambience;
+let preparingInvite = false;
 const guestId = sessionStorage.getItem('methaq-guest') || Array.from(crypto.getRandomValues(new Uint8Array(18)), b=>b.toString(16).padStart(2,'0')).join('');
 sessionStorage.setItem('methaq-guest',guestId);
 const name = new URLSearchParams(location.search).get('name') || 'ضيف ميثاق';
@@ -233,12 +234,12 @@ function inviteUrl() {
 }
 function invitePanel() {
   if (room.members.length === 2) return '';
+  if (tg?.initData) return button('invite','إرسال دعوة عبر تليجرام','primary','send');
   const url = inviteUrl();
   if (!url) return '<p class="bodycopy">رابط الدعوة غير متاح. تحقّق من إعداد اسم البوت في الاستضافة.</p>';
   return `<section class="panel stack">
     <label class="field invite-field">رابط الدعوة<input id="invite-url" dir="ltr" value="${esc(url)}" readonly></label>
-    <div class="actions">${button('copyInvite','نسخ رابط الدعوة','primary','copy')}
-    ${button('invite','مشاركة الدعوة عبر تليجرام','secondary','send')}</div>
+    <div class="actions">${button('copyInvite','نسخ رابط الدعوة','primary','copy')}</div>
   </section>`;
 }
 async function copyInvite() {
@@ -254,15 +255,24 @@ async function copyInvite() {
     toast('اضغط مطولًا على الرابط واختر «نسخ».');
   }
 }
-function shareInvite() {
-  const url = inviteUrl();
-  if (!url) return;
-  if (!tg?.initData) return copyInvite();
-  const share = new URL('https://t.me/share/url');
-  share.searchParams.set('url',url);
-  share.searchParams.set('text','انضم إليّ في جلسة ميثاق التركيز');
-  try { tg.openTelegramLink(share.href); }
-  catch { return copyInvite(); }
+async function shareInvite(button) {
+  if (preparingInvite) return;
+  if (!tg?.isVersionAtLeast?.('8.0') || typeof tg.shareMessage !== 'function') {
+    return toast('حدّث تطبيق تليجرام لإرسال دعوة بزر انضمام.');
+  }
+  if (!socket?.connected) return toast('الاتصال غير متاح حاليًا.');
+  preparingInvite = true;
+  button.disabled = true;
+  try {
+    const { messageId,error } = await socket.timeout(10000).emitWithAck('prepareInvite',{});
+    if (!messageId) return toast(error || 'تعذّر تجهيز الدعوة.');
+    tg.shareMessage(messageId,sent=>{ if (sent) toast('أُرسلت الدعوة.'); });
+  } catch {
+    toast('تعذّر فتح مشاركة الدعوة. جرّب مرة أخرى.');
+  } finally {
+    preparingInvite = false;
+    button.disabled = false;
+  }
 }
 async function shareCard() {
   await document.fonts.ready;
@@ -297,7 +307,7 @@ document.addEventListener('click',event=>{
     if (+value===120 && !profile?.inventory?.marathon) return toast('تحتاج إلى تذكرة الماراثون من المتجر.');
     chosen=+value; render(true);
   } else if (action==='ignore') { inviteDismissed=true; render(true); }
-  else if (action==='invite') shareInvite();
+  else if (action==='invite') shareInvite(b);
   else if (action==='copyInvite') copyInvite();
   else if (action==='filter') { category=+value; render(true); }
   else if (action==='sound') sound(value);

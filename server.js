@@ -7,8 +7,10 @@ import { dirname } from 'node:path';
 import { Server } from 'socket.io';
 import { Telegraf, Markup } from 'telegraf';
 import { items } from './public/catalog.js';
+import { roomInviteUrl } from './public/invite.js';
 
 const { BOT_TOKEN, BOT_USERNAME, APP_SHORT_NAME, PUBLIC_URL } = process.env;
+const bot = BOT_TOKEN ? new Telegraf(BOT_TOKEN) : null;
 const dev = process.env.NODE_ENV !== 'production' &&
   (process.env.DEV_GUESTS === '1' || (!BOT_TOKEN && process.env.DEV_GUESTS === undefined));
 const dbPath = process.env.DATABASE_PATH || 'data/methaq.sqlite';
@@ -155,6 +157,42 @@ io.on('connection', (socket) => {
       try { fn(payload ?? {}); ack({ ok:true }); } catch (error) { ack({ error:error.message }); }
     });
   }
+  let nextInviteAt = 0;
+  socket.on('prepareInvite', async (_payload, ack) => {
+    if (typeof ack !== 'function') return;
+    const telegramId = Number(id);
+    if (!bot || !Number.isSafeInteger(telegramId) || telegramId <= 0) {
+      return ack({ error:'أرسل الدعوة من داخل تطبيق تليجرام.' });
+    }
+    const room = current();
+    if (room?.phase !== 'lobby' || room.members.length !== 1) {
+      return ack({ error:'الدعوة متاحة عندما تكون الغرفة بانتظار شريك.' });
+    }
+    const url = roomInviteUrl({ bot:BOT_USERNAME, shortName:APP_SHORT_NAME, code:room.id });
+    if (!url) return ack({ error:'تعذّر تجهيز الدعوة. تحقّق من اسم البوت في الاستضافة.' });
+    if (clock.now() < nextInviteAt) return ack({ error:'انتظر قليلًا قبل إعادة المحاولة.' });
+    nextInviteAt = clock.now()+10000;
+    try {
+      const prepared = await bot.telegram.callApi('savePreparedInlineMessage', {
+        user_id:telegramId,
+        allow_user_chats:true,
+        result:{
+          type:'article',
+          id:room.id,
+          title:'دعوة إلى ميثاق التركيز',
+          input_message_content:{ message_text:'انضم إليّ في جلسة تركيز ثنائية لمدة '+room.minutes+' دقيقة.' },
+          reply_markup:{ inline_keyboard:[[{ text:'انضمام', url }]] }
+        }
+      }, { signal:AbortSignal.timeout(8000) });
+      if (current() !== room || room.phase !== 'lobby' || room.members.length !== 1) {
+        return ack({ error:'تغيّرت حالة الغرفة. افتح غرفة جديدة لإرسال دعوة.' });
+      }
+      nextInviteAt = 0;
+      ack({ messageId:prepared.id });
+    } catch {
+      ack({ error:'تعذّر تجهيز رسالة الدعوة من تليجرام. جرّب بعد قليل.' });
+    }
+  });
   function enter(room, goal) {
     const old = current();
     if (old && old.phase !== 'outcome') fail('أكمل غرفتك الحالية أولًا.');
@@ -323,8 +361,7 @@ app.use('/icons',express.static('node_modules/lucide-static/icons'));
 app.use('/fonts',express.static('node_modules/@fontsource/ibm-plex-sans-arabic/files'));
 app.use(express.static('public'));
 http.listen(Number(process.env.PORT || 3000),'0.0.0.0',() => console.log('Methaq listening'));
-if (BOT_TOKEN && PUBLIC_URL && process.env.RUN_BOT === '1') {
-  const bot = new Telegraf(BOT_TOKEN);
+if (bot && PUBLIC_URL && process.env.RUN_BOT === '1') {
   bot.start(ctx => ctx.reply('ابدأ جلسة تركيز ثنائية مع ميثاق التركيز.', Markup.inlineKeyboard([Markup.button.webApp('افتح ميثاق التركيز',PUBLIC_URL)])));
   bot.help(ctx => ctx.reply('افتح التطبيق عبر /start وأنشئ غرفة وشارك الدعوة مع شريكك.'));
   bot.launch().catch(() => console.error('تعذّر تشغيل بوت تليجرام. تحقّق من الاتصال وإعدادات البوت.'));
