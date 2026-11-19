@@ -1,0 +1,4 @@
+node_modules/
+public/utilities.css
+.env
+data/
