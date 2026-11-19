@@ -36,6 +36,12 @@ test('prepares a Telegram message whose join button opens the waiting room', {ti
   const command = (socket,event,payload={}) => socket.timeout(2000).emitWithAck(event,payload);
   assert.ok((await command(recipient,'prepareInvite')).error);
   assert.ok((await command(recipient,'adminList')).error);
+  const hostProfile = once(host,'profile');
+  await command(host,'refreshProfile');
+  assert.equal((await hostProfile)[0].adminAccess,'enabled');
+  const guestProfile = once(recipient,'profile');
+  await command(recipient,'refreshProfile');
+  assert.equal((await guestProfile)[0].adminAccess,'different-account');
   const students = await command(host,'adminList',{search:'@student_102'});
   assert.equal(students.students[0].id,'102');
   const proProfile = once(recipient,'profile');

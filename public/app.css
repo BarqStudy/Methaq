@@ -452,3 +452,5 @@ body {padding-bottom:calc(88px + var(--dock-bottom))}
   from {transform:translateY(6px);opacity:0}
   to {transform:translateY(0);opacity:1}
 }
+.admin-access summary {cursor:pointer;font-size:14px;font-weight:600}
+.admin-access b {display:inline-block;user-select:all}

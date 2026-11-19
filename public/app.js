@@ -272,6 +272,20 @@ function premiumDuration(minutes) {
   if (!dialog.open) dialog.showModal();
 }
 
+function adminAccessDetails() {
+  const status = {
+    enabled:'صلاحية الإدارة مفعّلة لهذا الحساب.',
+    missing:'الخادم الحالي لم يستلم إعداد الإدارة. تحقق من نشر متغير ADMIN_TELEGRAM_IDS على خدمة Methaq.',
+    invalid:'وصل متغير الإدارة إلى الخادم، لكن قيمته لا تحتوي على معرّف تليجرام صالح.',
+    'different-account':'الخادم استلم إعداد الإدارة، لكن معرّف هذا الحساب غير موجود ضمن المشرفين.',
+    'telegram-required':'افتح ميثاق من داخل تليجرام حتى يتحقق الخادم من معرّف حسابك.'
+  }[profile?.adminAccess] || 'بانتظار اتصال الحساب بالخادم.';
+  const id = user?.id;
+  return `<details class="appearance-card admin-access"><summary>حالة صلاحية الإدارة</summary>
+    <p class="bodycopy">${status}</p>
+    ${id && /^[0-9]+$/.test(id) ? '<p class="bodycopy">معرّف الحساب الحالي <b dir="ltr">'+esc(id)+'</b></p>' : ''}</details>`;
+}
+
 function openAppearance() {
   if (dialog.open && !appearanceOpen) return;
   appearanceOpen = true;
@@ -290,7 +304,8 @@ function openAppearance() {
       ${isPaid()?'':'<p class="bodycopy" id="glass-lock">تحكّم بالشفافية مع برو وسبيشل.</p>'}
     </section>
     ${!isPaid() && room?.phase!=='active' ? button('seePlans','عرض العضويات','secondary','crown') : ''}
-    ${profile?.admin && room?.phase!=='active' ? button('openAdmin','لوحة الإدارة','secondary','shield') : ''}</div>`;
+    ${profile?.admin && room?.phase!=='active' ? button('openAdmin','لوحة الإدارة','secondary','shield') : ''}
+    ${adminAccessDetails()}</div>`;
   if (!dialog.open) dialog.showModal();
 }
 
@@ -664,7 +679,7 @@ socket.on('connect_error',error=>{
 });
 socket.on('disconnect',()=>{ if (!blocked) toast('انقطع الاتصال. جارٍ إعادة المحاولة.'); });
 function updateProfile(data) {
-  const changed = profile?.appearance?.mode !== data.appearance?.mode || profile?.appearance?.palette !== data.appearance?.palette || profile?.plan?.tier !== data.plan?.tier;
+  const changed = profile?.appearance?.mode !== data.appearance?.mode || profile?.appearance?.palette !== data.appearance?.palette || profile?.plan?.tier !== data.plan?.tier || profile?.adminAccess !== data.adminAccess;
   profile = data;
   clearTimeout(expiryTimer);
   const expires = [data.plan?.until,...Object.values(data.cosmetics || {})].filter(value=>value>data.now);
@@ -673,7 +688,9 @@ function updateProfile(data) {
   if (changed && appearanceOpen && dialog.open) {
     const focus = dialog.querySelector(':focus');
     const focused = focus?.dataset;
+    const showAdminAccess = dialog.querySelector('.admin-access')?.open;
     openAppearance();
+    if (showAdminAccess) dialog.querySelector('.admin-access').open = true;
     if (focus?.id==='glass-range') dialog.querySelector('#glass-range')?.focus();
     if (focused?.action && focused?.value) dialog.querySelector('[data-action="'+focused.action+'"][data-value="'+focused.value+'"]')?.focus();
   }

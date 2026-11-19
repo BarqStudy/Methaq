@@ -22,6 +22,12 @@ const admins = new Set(adminIds.filter(id=>telegramIdPattern.test(id)));
 if (adminIds.some(id=>!telegramIdPattern.test(id))) {
   console.warn('ADMIN_TELEGRAM_IDS: تجاهل الخادم قيمة غير صالحة. أدخل معرّف تليجرام الرقمي.');
 }
+function adminAccess(id) {
+  if (!telegramIdPattern.test(id)) return 'telegram-required';
+  if (admins.has(id)) return 'enabled';
+  if (!adminIds.length) return 'missing';
+  return admins.size ? 'different-account' : 'invalid';
+}
 const bot = BOT_TOKEN ? new Telegraf(BOT_TOKEN) : null;
 const dev = process.env.NODE_ENV !== 'production' &&
   (process.env.DEV_GUESTS === '1' || (!BOT_TOKEN && process.env.DEV_GUESTS === undefined));
@@ -93,7 +99,7 @@ function profile(id) {
     appearance.transparency = glassRange.defaultValue;
   }
   return { ...player, streak, inventory, equipped, plan, cosmetics, appearance, now:clock.now(),
-    admin:admins.has(id), prices:billingEnabled && !id.startsWith('guest:') ? paidPrices : {},
+    admin:admins.has(id), adminAccess:adminAccess(id), prices:billingEnabled && !id.startsWith('guest:') ? paidPrices : {},
     ...stats, reliability: stats.completed + stats.left ? Math.round(100*stats.completed/(stats.completed+stats.left)) : 100, history };
 }
 
