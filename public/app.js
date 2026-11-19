@@ -699,6 +699,9 @@ socket.on('room', next=>{
     tab='home';
   }
   render();
+  if (tab==='home' && (previous?.id!==next?.id || previous?.phase!==next?.phase)) {
+    window.scrollTo({top:0,behavior:'instant'});
+  }
 });
 socket.on('directInvite', data=>{
   incomingInvite=data;
