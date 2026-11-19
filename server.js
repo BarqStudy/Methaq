@@ -12,7 +12,16 @@ import { roomInviteUrl } from './public/invite.js';
 
 const { BOT_TOKEN, BOT_USERNAME, APP_SHORT_NAME, PUBLIC_URL } = process.env;
 const telegramIdPattern = /^[1-9][0-9]{0,15}$/;
-const admins = new Set((process.env.ADMIN_TELEGRAM_IDS || '').split(',').map(id=>id.trim()).filter(id=>telegramIdPattern.test(id)));
+const adminSetting = (process.env.ADMIN_TELEGRAM_IDS || '')
+  .replace(/[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g,'')
+  .replace(/[٠-٩]/g,digit=>String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit)))
+  .replace(/[۰-۹]/g,digit=>String('۰۱۲۳۴۵۶۷۸۹'.indexOf(digit)))
+  .trim().replace(/^["']|["']$/g,'');
+const adminIds = adminSetting.split(/[\s,،]+/).filter(Boolean);
+const admins = new Set(adminIds.filter(id=>telegramIdPattern.test(id)));
+if (adminIds.some(id=>!telegramIdPattern.test(id))) {
+  console.warn('ADMIN_TELEGRAM_IDS: تجاهل الخادم قيمة غير صالحة. أدخل معرّف تليجرام الرقمي.');
+}
 const bot = BOT_TOKEN ? new Telegraf(BOT_TOKEN) : null;
 const dev = process.env.NODE_ENV !== 'production' &&
   (process.env.DEV_GUESTS === '1' || (!BOT_TOKEN && process.env.DEV_GUESTS === undefined));

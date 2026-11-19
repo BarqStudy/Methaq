@@ -430,3 +430,25 @@ body {padding-bottom:calc(88px + var(--dock-bottom))}
   #admin-toggle {padding-inline:7px}
   #admin-toggle i {display:none}
 }
+
+@property --home-ring-progress {
+  syntax:"<number>";
+  inherits:false;
+  initial-value:0;
+}
+.home-timer .dial {
+  --home-ring-progress:var(--progress);
+  background:conic-gradient(var(--accent) calc(var(--home-ring-progress) * 1%),var(--accent-line) 0);
+  animation:timer-ring-in .85s cubic-bezier(.18,.78,.3,1) both;
+}
+.home-timer .dial-content {
+  animation:timer-content-in .42s cubic-bezier(.18,.78,.3,1) .08s both;
+}
+@keyframes timer-ring-in {
+  from {--home-ring-progress:0;transform:scale(.94);opacity:.68}
+  to {--home-ring-progress:var(--progress);transform:scale(1);opacity:1}
+}
+@keyframes timer-content-in {
+  from {transform:translateY(6px);opacity:0}
+  to {transform:translateY(0);opacity:1}
+}

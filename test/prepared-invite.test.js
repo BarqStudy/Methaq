@@ -12,7 +12,7 @@ test('prepares a Telegram message whose join button opens the waiting room', {ti
   process.env.DATABASE_PATH = ':memory:';
   process.env.PORT = '0';
   process.env.RUN_BOT = '0';
-  process.env.ADMIN_TELEGRAM_IDS = '101';
+  process.env.ADMIN_TELEGRAM_IDS = '"١٠١، ٩٩٩"';
   const api = t.mock.method(Telegram.prototype,'callApi',async () => ({id:'prepared-test-message'}));
   const {http} = await import('../server.js');
   if (!http.listening) await once(http,'listening');

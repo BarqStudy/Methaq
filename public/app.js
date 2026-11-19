@@ -289,7 +289,8 @@ function openAppearance() {
       <input id="glass-range" type="range" min="${glassRange.min}" max="${glassRange.max}" value="${appearance.transparency}" ${isPaid()?'':'disabled aria-describedby="glass-lock"'}>
       ${isPaid()?'':'<p class="bodycopy" id="glass-lock">تحكّم بالشفافية مع برو وسبيشل.</p>'}
     </section>
-    ${!isPaid() && room?.phase!=='active' ? button('seePlans','عرض العضويات','secondary','crown') : ''}</div>`;
+    ${!isPaid() && room?.phase!=='active' ? button('seePlans','عرض العضويات','secondary','crown') : ''}
+    ${profile?.admin && room?.phase!=='active' ? button('openAdmin','لوحة الإدارة','secondary','shield') : ''}</div>`;
   if (!dialog.open) dialog.showModal();
 }
 
@@ -555,6 +556,7 @@ document.addEventListener('click',event=>{
   }
   else if (action==='openAdmin') {
     if (!profile?.admin || room?.phase==='active') return;
+    if (dialog.open) dialog.close();
     tab='admin'; render(); window.scrollTo({top:0,behavior:'instant'});
     adminRequest('adminList',{search:adminSearch});
   }
