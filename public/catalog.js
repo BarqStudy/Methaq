@@ -1,4 +1,4 @@
-export const sections = ['الحماية والوقت','الأجواء والثيمات','الألقاب والشارات','التفاعلات'];
+export const sections = ['الحماية والوقت','الأجواء والثيمات','الألقاب والشارات','التفاعلات','ثيمات تزيينية'];
 export const items = {
   shield: [0,'درع الطوارئ',100,'shield','يحمي سلسلة التزامك عند الانسحاب أو انقطاع الاتصال.'],
   marathon: [0,'تذكرة الماراثون',120,'ticket','تفتح جلسة واحدة مدتها ١٢٠ دقيقة.'],
@@ -14,7 +14,11 @@ export const items = {
   frame: [2,'الإطار الذهبي',150,'circle-user-round','إطار ذهبي لصورتك الشخصية.'],
   zap: [3,'صعقة التركيز',30,'zap','إشارة اهتزاز إضافية خلال الجلسة.'],
   horn: [3,'بوق الفوز',35,'megaphone','احتفل مع شريكك بعد النجاح.'],
-  coffee: [3,'كوب قهوة',40,'coffee','أرسل بطاقة قهوة لشريكك أثناء الجلسة.']
+  coffee: [3,'كوب قهوة',40,'coffee','أرسل بطاقة قهوة لشريكك أثناء الجلسة.'],
+  medic: [4,'الطب',95,'stethoscope','زخرفة سماعة طبية ولمسات فيروزية حول حسابك والمؤقت.'],
+  engineer: [4,'الهندسة',95,'drafting-compass','زخرفة هندسية بلون نحاسي حول حسابك والمؤقت.'],
+  artist: [4,'الفنون',95,'palette','زخرفة فنية بدرجات بنفسجية حول حسابك والمؤقت.'],
+  coder: [4,'البرمجة',95,'terminal','زخرفة برمجية بلمسات زرقاء حول حسابك والمؤقت.']
 };
 
 export const rewards = { achievement:45, cooperation:15, steadfast:25, withdrawal:20 };
@@ -29,6 +33,7 @@ export const palettes = {
   violet: { label:'بنفسجي', swatch:'#b59aff', premium:true },
   amber: { label:'كهرماني', swatch:'#f2b46f', premium:true },
   aurora: { label:'تدرّج الشفق', swatch:'linear-gradient(135deg,#8fe9cf,#9f9af9)', premium:true },
+  custom: { label:'ألواني', premium:true },
   dusk: { label:'تدرّج الغروب', swatch:'linear-gradient(135deg,#ffc888,#df99d9)', premium:true },
   ocean: { label:'محيط زجاجي', swatch:'linear-gradient(135deg,#9bf3e3,#7bafff)', premium:true },
   rose: { label:'ورد زجاجي', swatch:'linear-gradient(135deg,#ffc2d7,#ceadff)', premium:true }
@@ -38,7 +43,8 @@ export const storeArt = {
   shield:'#65dfba', marathon:'#ffbb78', pause:'#e9a1cb', eraser:'#ac9cf6',
   rain:'#80bfff', cafe:'#f2be87', forest:'#91db9c', fire:'#ff976f',
   scholar:'#a6a5ff', owl:'#b5a1eb', steadfast:'#f9bf70', frame:'#f8d080',
-  zap:'#f6dc65', horn:'#ef91b9', coffee:'#dfae8d'
+  zap:'#f6dc65', horn:'#ef91b9', coffee:'#dfae8d',
+  medic:'#48c7b8', engineer:'#eeb36f', artist:'#c5a3ff', coder:'#87aefa'
 };
 
 export const plans = {
@@ -47,8 +53,4 @@ export const plans = {
 };
 
 export const durations = [25,50,90,120,180];
-export const sessionTemplates = {
-  review: { label:'مراجعة سريعة', minutes:25, icon:'book-open', goal:'أراجع أهم الأفكار وأختبر نفسي بأسئلة قصيرة.' },
-  study: { label:'مذاكرة عميقة', minutes:90, icon:'graduation-cap', goal:'أذاكر الفصل وألخّص النقاط التي أحتاج مراجعتها.' },
-  project: { label:'ماراثون مشروع', minutes:180, icon:'rocket', goal:'أنجز الجزء التالي من مشروعي وأراجع النتيجة.' }
-};
+export const referralPoints = 100;

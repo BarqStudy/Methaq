@@ -386,9 +386,7 @@ body {padding-bottom:calc(88px + var(--dock-bottom))}
 .focus-home .durations {grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}
 .focus-home .duration {border-radius:17px}
 .primary,.secondary,.danger,.field input {border-radius:13px}
-.template-panel,.join-code,.direct-banner {margin-block-start:12px}
-.template-grid {display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}
-.template-grid .secondary {flex:1 1 auto}
+.join-code,.direct-banner {margin-block-start:12px}
 .join-code,.invite-code {display:flex;gap:9px;align-items:end}
 .join-code .field,.invite-code label {flex:1;min-width:0;margin:0}
 .invite-code input {display:block;width:100%;margin-top:6px;padding:8px;border:1px solid var(--line);border-radius:13px;background:var(--surface);color:var(--text);font-family:monospace}
@@ -454,3 +452,44 @@ body {padding-bottom:calc(88px + var(--dock-bottom))}
 }
 .admin-access summary {cursor:pointer;font-size:14px;font-weight:600}
 .admin-access b {display:inline-block;user-select:all}
+
+:root[data-palette=custom] {
+  --accent:color-mix(in srgb,var(--custom-color) 50%,#f3f9ff);
+  --accent-ink:#fff;
+  --action-fill:linear-gradient(#0009,#0009),var(--custom-fill);
+}
+:root[data-mode=light][data-palette=custom] {
+  --accent:color-mix(in srgb,var(--custom-color) 38%,#151c25);
+}
+.custom-palette select,.admin-student-form input {
+  background:var(--surface);
+  color:var(--text);
+  border:1px solid var(--line);
+  border-radius:11px;
+  padding:7px;
+}
+.admin-student-form input {width:90px;min-height:40px}
+.custom-palette input[type=color] {width:38px;height:28px;vertical-align:middle;cursor:pointer}
+.custom-preview {height:28px;border:1px solid var(--line);border-radius:10px}
+[data-decoration] {position:relative;overflow:hidden;isolation:isolate}
+[data-decoration]::after {
+  position:absolute;
+  z-index:-1;
+  pointer-events:none;
+  content:"";
+  inset:0;
+  background:radial-gradient(ellipse at 10% 65%,color-mix(in srgb,var(--decoration) 34%,transparent),transparent 52%);
+}
+.decoration-art {
+  position:absolute;
+  pointer-events:none;
+  inset-inline-end:15px;
+  inset-block-end:10px;
+  color:var(--decoration);
+  opacity:.56;
+  transform:rotate(-14deg);
+  z-index:-1;
+}
+.decoration-art i {width:43px;height:43px}
+.preview .decoration-art {inset-inline-end:8%;inset-block-end:22%;opacity:.60}
+.preview .decoration-art i {width:56px;height:56px}

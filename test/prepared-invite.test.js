@@ -5,7 +5,7 @@ import test from 'node:test';
 import { io } from 'socket.io-client';
 import { Telegram } from 'telegraf';
 
-test('prepares a Telegram message whose join button opens the waiting room', {timeout:8000}, async (t) => {
+test('runs Telegram invitations, admin changes, custom appearance, and referral rewards', {timeout:8000}, async (t) => {
   process.env.BOT_TOKEN = 'fixture:token';
   process.env.BOT_USERNAME = 'MethaqTestBot';
   process.env.APP_SHORT_NAME = '';
@@ -14,7 +14,7 @@ test('prepares a Telegram message whose join button opens the waiting room', {ti
   process.env.RUN_BOT = '0';
   process.env.ADMIN_TELEGRAM_IDS = '"١٠١، ٩٩٩"';
   const api = t.mock.method(Telegram.prototype,'callApi',async () => ({id:'prepared-test-message'}));
-  const {http} = await import('../server.js');
+  const {http,clock} = await import('../server.js');
   if (!http.listening) await once(http,'listening');
   const sockets = [];
   t.after(() => { sockets.forEach(socket=>socket.disconnect()); http.close(); });
@@ -44,6 +44,8 @@ test('prepares a Telegram message whose join button opens the waiting room', {ti
   assert.equal((await guestProfile)[0].adminAccess,'different-account');
   const students = await command(host,'adminList',{search:'@student_102'});
   assert.equal(students.students[0].id,'102');
+  assert.ok((await command(recipient,'adminPoints',{student:'102',points:99})).error);
+  assert.ok((await command(recipient,'customPalette',{fill:'solid',first:'#221155',second:'#221155'})).error);
   const proProfile = once(recipient,'profile');
   assert.deepEqual(await command(host,'adminGrant',{plan:'pro',student:'102'}),{ok:true});
   assert.equal((await proProfile)[0].plan.tier,'pro');
@@ -52,6 +54,20 @@ test('prepares a Telegram message whose join button opens the waiting room', {ti
   assert.deepEqual(await command(recipient,'redeemCode',{code:promo.toLowerCase()}),{ok:true});
   assert.equal((await specialProfile)[0].plan.tier,'special');
   assert.ok((await command(host,'redeemCode',{code:promo})).error);
+  const custom = once(recipient,'profile');
+  const colors = {fill:'gradient',first:'#4a60af',second:'#da83a0'};
+  assert.deepEqual(await command(recipient,'customPalette',colors),{ok:true});
+  assert.deepEqual((await custom)[0].appearance.custom,colors);
+  assert.deepEqual(await command(recipient,'equip',{item:'medic'}),{ok:true});
+  const points = once(recipient,'profile');
+  assert.deepEqual(await command(host,'adminPoints',{student:'102',points:50}),{ok:true});
+  assert.equal((await points)[0].points,50);
+  const revoked = once(recipient,'profile');
+  assert.deepEqual(await command(host,'adminRevoke',{student:'102'}),{ok:true});
+  const [free] = await revoked;
+  assert.equal(free.plan.tier,'free');
+  assert.equal(free.appearance.palette,'emerald');
+  assert.equal(free.equipped.decoration,undefined);
   const created = once(host,'room');
   assert.deepEqual(await command(host,'create',{minutes:25,goal:'مراجعة الدرس'}),{ok:true});
   const [room] = await created;
@@ -72,6 +88,24 @@ test('prepares a Telegram message whose join button opens the waiting room', {ti
   assert.deepEqual(await command(recipient,'join',{code:room.code.toLowerCase(),goal:'القراءة'}),{ok:true});
   assert.equal((await joined)[0].members.length,2);
   assert.ok((await command(host,'prepareInvite')).error);
+  const hostReady = once(recipient,'room');
+  await command(host,'ready');
+  await hostReady;
+  const active = once(recipient,'room');
+  await command(recipient,'ready');
+  const [started] = await active;
+  assert.equal(started.phase,'active');
+  const hostReward = once(host,'profile');
+  const recipientReward = once(recipient,'profile');
+  clock.now = () => started.endAt+1;
+  const [hostResult] = await hostReward;
+  const [recipientResult] = await recipientReward;
+  assert.equal(hostResult.points,160);
+  assert.equal(recipientResult.points,210);
+  assert.equal(hostResult.referralBonus,100);
+  assert.equal(recipientResult.referralBonus,100);
+  clock.now = Date.now;
+
   const banned = once(recipient,'banned');
   assert.deepEqual(await command(host,'adminBan',{student:'102',banned:true}),{ok:true});
   assert.match((await banned)[0],/حُظر/);

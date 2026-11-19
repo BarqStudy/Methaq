@@ -6,7 +6,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { Server } from 'socket.io';
 import { Telegraf, Markup } from 'telegraf';
-import { items,glassRange,palettes,plans,rewards,successReward,durations } from './public/catalog.js';
+import { items,glassRange,palettes,plans,rewards,successReward,durations,referralPoints } from './public/catalog.js';
 import { createMembership,paidPrices } from './membership.js';
 import { roomInviteUrl } from './public/invite.js';
 
@@ -36,6 +36,9 @@ if (dbPath !== ':memory:') mkdirSync(dirname(dbPath), { recursive: true });
 const db = new DatabaseSync(dbPath);
 db.exec(`
   PRAGMA journal_mode = WAL;
+  CREATE TABLE IF NOT EXISTS referrals (
+    invitee TEXT PRIMARY KEY, inviter TEXT NOT NULL, rewarded_room TEXT
+  );
   CREATE TABLE IF NOT EXISTS telegram_students(id TEXT PRIMARY KEY,name TEXT NOT NULL,handle TEXT);
   CREATE TABLE IF NOT EXISTS banned_students(id TEXT PRIMARY KEY, banned_by TEXT NOT NULL, banned_at INTEGER NOT NULL);
   CREATE TABLE IF NOT EXISTS players(id TEXT PRIMARY KEY, points INTEGER DEFAULT 0, streak INTEGER DEFAULT 0,
@@ -90,16 +93,19 @@ function profile(id) {
   const plan = membership.planStatus(id);
   const cosmetics = membership.cosmetics(id);
   const appearance = membership.appearance(id);
+  if (plan.tier!=='free') appearance.custom = membership.customPalette(id);
   const inventory = JSON.parse(player.inventory);
   const equipped = JSON.parse(player.equipped);
   if (plan.tier === 'free') {
     for (const slot of ['title','frame']) if (!cosmetics[equipped[slot]]) delete equipped[slot];
     if (!inventory[equipped.theme]) delete equipped.theme;
+    if (!inventory[equipped.decoration]) delete equipped.decoration;
     if (palettes[appearance.palette]?.premium) appearance.palette = 'emerald';
     appearance.transparency = glassRange.defaultValue;
   }
   return { ...player, streak, inventory, equipped, plan, cosmetics, appearance, now:clock.now(),
     admin:admins.has(id), adminAccess:adminAccess(id), prices:billingEnabled && !id.startsWith('guest:') ? paidPrices : {},
+    referralBonus:query('SELECT count(*) AS referrals FROM referrals WHERE rewarded_room IS NOT NULL AND (inviter=? OR invitee=?)',id,id).referrals*referralPoints,
     ...stats, reliability: stats.completed + stats.left ? Math.round(100*stats.completed/(stats.completed+stats.left)) : 100, history };
 }
 
@@ -139,6 +145,7 @@ function send(room) {
 function finish(room, leaving) {
   if (room.phase !== 'active') return;
   const now = clock.now();
+  const rewarded = new Set();
   transaction(() => {
     for (const p of room.members) {
       const current = profile(p.id);
@@ -148,11 +155,19 @@ function finish(room, leaving) {
       const streak = status === 'success' ? current.streak + Number(current.last_day !== today) : status === 'left' ? 0 : current.streak;
       run('UPDATE players SET points=points+?, streak=?, last_day=? WHERE id=?', reward, streak, status === 'success' ? today : current.last_day, p.id);
       run('INSERT INTO results(room,player,status,reward,minutes,old_streak) VALUES(?,?,?,?,?,?)',room.id,p.id,status,reward,room.minutes,current.streak);
+      if (status==='success' && current.completed===0) {
+        const referral = query('SELECT inviter FROM referrals WHERE invitee=? AND rewarded_room IS NULL',p.id);
+        if (referral) {
+          run('UPDATE referrals SET rewarded_room=? WHERE invitee=?',room.id,p.id);
+          run('UPDATE players SET points=points+? WHERE id IN (?,?)',referralPoints,p.id,referral.inviter);
+          rewarded.add(referral.inviter);
+        }
+      }
     }
   });
   room.phase = 'outcome';
   room.finished = now;
-  for (const p of room.members) io.to('player:'+p.id).emit('profile',profile(p.id));
+  for (const player of new Set([...room.members.map(p=>p.id),...rewarded])) io.to('player:'+player).emit('profile',profile(player));
   send(room);
 }
 
@@ -245,7 +260,7 @@ io.on('connection', (socket) => {
     });
   }
   function adminStudent(row) {
-    return {...row,plan:membership.planStatus(row.id),banned:isBanned(row.id),admin:admins.has(row.id)};
+    return {...row,points:query('SELECT points FROM players WHERE id=?',row.id)?.points || 0,plan:membership.planStatus(row.id),banned:isBanned(row.id),admin:admins.has(row.id)};
   }
   adminAction('adminList', ({search}) => {
     const phrase = typeof search==='string' ? search.trim().replace(/^@/,'').toLowerCase().slice(0,80) : '';
@@ -258,6 +273,23 @@ io.on('connection', (socket) => {
     if (isBanned(student)) fail('ارفع الحظر قبل تفعيل العضوية.');
     if (membership.planStatus(student).tier==='special') fail('سبيشل مفعّلة لهذا الحساب مدى الحياة.');
     membership.grant(student,plan);
+    updatePlayer(student);
+    return {ok:true};
+  });
+  adminAction('adminRevoke', ({student}) => {
+    if (typeof student!=='string' || !telegramIdPattern.test(student)) fail('اختر حسابًا صالحًا.');
+    membership.revoke(student);
+    updatePlayer(student);
+    return {ok:true};
+  });
+  adminAction('adminPoints', ({student,points}) => {
+    if (typeof student!=='string' || !telegramIdPattern.test(student) || !Number.isSafeInteger(points) || points<=0) {
+      fail('اكتب عدد نقاط صحيحًا أكبر من صفر.');
+    }
+    const balance = query('SELECT points FROM players WHERE id=?',student)?.points || 0;
+    if (!Number.isSafeInteger(balance+points)) fail('الرصيد بعد الإضافة يتجاوز الحد المسموح.');
+    run(`INSERT INTO players(id,points) VALUES(?,?)
+      ON CONFLICT(id) DO UPDATE SET points=points+excluded.points`,student,points);
     updatePlayer(student);
     return {ok:true};
   });
@@ -332,10 +364,21 @@ io.on('connection', (socket) => {
         fail('درجة الشفافية غير متاحة.');
       }
     }
+    if (palette==='custom' && !membership.customPalette(id)) fail('احفظ ألوانك المخصصة أولًا.');
     membership.setAppearance(id,mode,palette,transparency);
     syncProfile();
   });
 
+  action('customPalette', ({fill,first,second}) => {
+    if (!isPaid(id)) fail('الألوان المخصصة متاحة مع برو وسبيشل.');
+    const isHex = value=>typeof value==='string' && /^#[0-9a-f]{6}$/i.test(value);
+    if (!['solid','gradient'].includes(fill) || !isHex(first) || !isHex(second)) fail('اختر ألوانًا صالحة.');
+    transaction(() => {
+      membership.setCustomPalette(id,{fill,first,second});
+      membership.setAppearance(id,membership.appearance(id).mode,'custom');
+    });
+    syncProfile();
+  });
   let nextInvoiceAt = 0;
   socket.on('membershipInvoice', async (payload, ack) => {
     if (typeof ack !== 'function') return;
@@ -389,7 +432,11 @@ io.on('connection', (socket) => {
     const room = rooms.get(normalized.toLowerCase()) || (/^[A-F0-9]{10}$/.test(normalized)
       ? [...rooms.values()].find(room=>room.code===normalized) : null);
     if (!room || room.phase !== 'lobby' || room.members.length >= 2) fail('الغرفة ممتلئة أو انتهت صلاحية الدعوة.');
+    const inviter = room.members[0].id;
     enter(room,goalText(goal));
+    if (telegramIdPattern.test(id) && telegramIdPattern.test(inviter) && !profile(id).completed) {
+      run('INSERT OR IGNORE INTO referrals(invitee,inviter) VALUES(?,?)',id,inviter);
+    }
   });
   let nextDirectInvite = 0;
   action('directInvite', ({handle}) => {
@@ -486,9 +533,9 @@ io.on('connection', (socket) => {
     if (!Object.hasOwn(items,item) || item==='marathon') fail('العنصر غير موجود.');
     const [category,,cost] = items[item];
     const { points,inventory,cosmetics } = profile(id);
-    if ([1,2].includes(category) && isPaid(id)) fail('العنصر متاح لك ضمن العضوية.');
+    if ([1,2,4].includes(category) && isPaid(id)) fail('العنصر متاح لك ضمن العضوية.');
     if (points < cost) fail('رصيدك لا يكفي لهذا العنصر.');
-    if ((category === 1 && inventory[item]) || (category === 2 && cosmetics[item])) fail('هذا العنصر موجود في مخزونك.');
+    if (([1,4].includes(category) && inventory[item]) || (category === 2 && cosmetics[item])) fail('هذا العنصر موجود في مخزونك.');
     inventory[item] = category === 2 ? 1 : (inventory[item] || 0)+1;
     transaction(() => {
       if (category === 2) membership.grantCosmetic(id,item);
@@ -497,12 +544,12 @@ io.on('connection', (socket) => {
     syncProfile();
   });
   action('equip', ({item}) => {
-    if (!Object.hasOwn(items,item) || ![1,2].includes(items[item][0])) fail('العنصر غير متاح.');
+    if (!Object.hasOwn(items,item) || ![1,2,4].includes(items[item][0])) fail('العنصر غير متاح.');
     const { inventory,cosmetics } = profile(id);
     const category = items[item][0];
-    if (!isPaid(id) && !(category === 1 ? inventory[item] : cosmetics[item])) fail('العنصر غير متاح.');
+    if (!isPaid(id) && !(category === 2 ? cosmetics[item] : inventory[item])) fail('العنصر غير متاح.');
     const equipped = JSON.parse(query('SELECT equipped FROM players WHERE id=?',id).equipped);
-    const slot = category === 1 ? 'theme' : item === 'frame' ? 'frame' : 'title';
+    const slot = category === 4 ? 'decoration' : category === 1 ? 'theme' : item === 'frame' ? 'frame' : 'title';
     equipped[slot]=equipped[slot]===item ? null : item;
     run('UPDATE players SET equipped=? WHERE id=?',JSON.stringify(equipped),id);
     syncProfile();

@@ -20,6 +20,9 @@ export function createMembership(db, now) {
       player TEXT PRIMARY KEY, mode TEXT NOT NULL, palette TEXT NOT NULL,
       transparency INTEGER NOT NULL DEFAULT ${glassRange.defaultValue}
     );
+    CREATE TABLE IF NOT EXISTS custom_palettes (
+      player TEXT PRIMARY KEY, fill TEXT NOT NULL, first_color TEXT NOT NULL, second_color TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS membership_codes (
       code TEXT PRIMARY KEY, plan TEXT NOT NULL, created_by TEXT NOT NULL,
       created INTEGER NOT NULL, redeemed_by TEXT, redeemed_at INTEGER
@@ -37,6 +40,10 @@ export function createMembership(db, now) {
     db.exec(`ALTER TABLE appearances ADD COLUMN transparency INTEGER NOT NULL DEFAULT ${glassRange.defaultValue}`);
   }
 
+  const readCustom = db.prepare('SELECT fill,first_color AS first,second_color AS second FROM custom_palettes WHERE player=?');
+  const writeCustom = db.prepare(`INSERT INTO custom_palettes(player,fill,first_color,second_color) VALUES(?,?,?,?)
+    ON CONFLICT(player) DO UPDATE SET fill=excluded.fill,first_color=excluded.first_color,second_color=excluded.second_color`);
+  const removePlan = db.prepare('DELETE FROM memberships WHERE player=?');
   const readMembership = db.prepare('SELECT pro_until, special FROM memberships WHERE player=?');
   const readAppearance = db.prepare('SELECT mode,palette,transparency FROM appearances WHERE player=?');
   const readCosmetics = db.prepare('SELECT item,expires_at FROM cosmetic_expiry WHERE player=? AND expires_at>?');
@@ -77,6 +84,9 @@ export function createMembership(db, now) {
   return {
     planStatus,
     grant,
+    revoke(player) { removePlan.run(player); },
+    customPalette(player) { return readCustom.get(player); },
+    setCustomPalette(player,{fill,first,second}) { writeCustom.run(player,fill,first,second); },
     codes() { return listCodes.all(); },
     createCode(admin, plan) {
       let code;

@@ -1,4 +1,4 @@
-import { items,sections,palettes,plans,rewards,successReward,storeArt,defaultAppearance,glassRange,durations,sessionTemplates } from './catalog.js';
+import { items,sections,palettes,plans,rewards,successReward,storeArt,defaultAppearance,glassRange,durations,referralPoints } from './catalog.js';
 import { readRoomInvite,roomInviteUrl } from './invite.js';
 
 const telegramLaunch = /(?:^#|[&?])tgWebApp/.test(location.hash) || new URLSearchParams(location.search).has('tgWebAppStartParam')
@@ -60,6 +60,7 @@ function emit(event,payload={}) {
   socket.timeout(5000).emit(event,payload,(error,response) => {
     if (error || response?.error) toast(response?.error || 'تعذر الاتصال بالخادم.');
     else if (['buy','equip','protect'].includes(event)) toast('تم تحديث مخزونك.');
+    else if (event==='customPalette') toast('تم حفظ ألوانك.');
     else if (event==='appearance') toast('تم حفظ المظهر.');
     else if (event==='directInvite') toast('أُرسلت الدعوة داخل ميثاق.');
     else if (event==='redeemCode') toast('تم تفعيل عضويتك.');
@@ -88,13 +89,22 @@ const heading = (title,caption='') => `<div class="heading"><h1>${title}</h1>${c
 const isInvite = () => invite && !inviteDismissed && (!room || revisited);
 const durationAllowed = (minutes) => minutes<120 || isPaid();
 const dialProgress = (minutes) => minutes<=25 ? Math.max(0,minutes) : Math.min(100,25+(minutes-25)*75/155);
+function decorationStyle() {
+  const key = profile?.equipped?.decoration;
+  return key ? 'data-decoration="'+key+'" style="--decoration:'+storeArt[key]+'"' : '';
+}
+function decorationIcon() {
+  const key = profile?.equipped?.decoration;
+  return key ? '<span class="decoration-art" aria-hidden="true">'+icon(items[key][3])+'</span>' : '';
+}
 function studentProfile() {
   const equipped = profile?.equipped;
   const tier = profile?.plan?.tier;
-  return `<section class="panel student-profile">
+  return `<section class="panel student-profile" ${decorationStyle()}>
+    ${decorationIcon()}
     ${avatar({...user,equipped})}<div><strong>${esc(user?.name || 'ضيف ميثاق')}</strong>
     <small>${items[equipped?.title]?.[1] || 'رفيق تركيز'}</small>
-    ${tg?.initData && user?.id ? '<small>معرّف تليجرام <b dir="ltr">'+esc(user.id)+'</b></small>' : ''}</div>
+    </div>
     ${tier && tier!=='free' ? '<span class="tag">'+icon(plans[tier].icon)+' '+plans[tier].title+'</span>' : ''}</section>`;
 }
 function pendingInvite() {
@@ -112,8 +122,9 @@ function home() {
     ${studentProfile()}
     ${pendingInvite()}
     ${joining ? `<section class="intro"><h1>لديك دعوة للتركيز</h1><p>اكتب هدفك للانضمام إلى شريكك في غرفة التركيز.</p></section>` : `
-    <section class="panel preview home-timer" aria-labelledby="focus-timer-title">
+    <section class="panel preview home-timer" ${decorationStyle()} aria-labelledby="focus-timer-title">
       <div class="preview-top"><h1 id="focus-timer-title">مؤقت التركيز</h1><span class="tag"><span class="dot"></span> جلسة ثنائية</span></div>
+      ${decorationIcon()}
       ${dial(chosen+':00','مدة الجلسة',dialProgress(chosen))}
       <p class="preview-note">${icon('users')} يبدأ المؤقت بعد موافقة الطرفين</p>
     </section>
@@ -123,8 +134,7 @@ function home() {
     ${joining?'':`<label class="field">ميثاق تشجيعي <small class="optional">اختياري</small><input maxlength="160" name="pact" placeholder="مثال: نلخّص فصلًا بعد الجلسة" value="${esc(pact)}"></label>`}
     <button class="primary wide">${icon(joining?'log-in':'circle-plus')}${joining?'الانضمام إلى الغرفة':'أنشئ غرفة وادعُ شريكك'}</button>
     ${joining?button('ignore','العودة للرئيسية','plain'):''}</form>
-    ${joining?'':`<form id="join-code-form" class="panel join-code"><label class="field">عندك رمز غرفة؟<input name="code" dir="ltr" maxlength="10" placeholder="رمز الغرفة" required></label><button class="secondary">${icon('log-in')} انضم بالرمز</button></form>
-    <section class="panel template-panel"><div class="actions"><h2>قوالب التركيز</h2>${!isPaid()?'<span class="tag">'+icon('lock-keyhole')+' للمشتركين</span>':''}</div><div class="template-grid">${Object.entries(sessionTemplates).map(([key,t])=>button('template',t.label,'secondary',t.icon,key)).join('')}</div></section>`}
+    ${joining?'':`<form id="join-code-form" class="panel join-code"><label class="field">عندك رمز غرفة؟<input name="code" dir="ltr" maxlength="10" placeholder="رمز الغرفة" required></label><button class="secondary">${icon('log-in')} انضم بالرمز</button></form>`}
     <div class="pact-bar"><span class="tile-icon">${icon('shield-check')}</span><div><strong>ميثاق الجلسة</strong><p>عند إتمام الجلسة، تمنح المنصة كل طرف ${num(rewards.achievement)} نقطة إنجاز و${num(rewards.cooperation)} نقطة تعاون.</p></div><span class="tag">${icon('sparkles')} مكافأة المنصة</span></div></div>`;
 }
 function person(p, active=false) {
@@ -150,7 +160,7 @@ function active() {
   const inventory = profile?.inventory || {};
   const request = room.pauseRequest?.until > serverNow() && room.pauseRequest;
   return `<div class="inner theme-${profile?.equipped?.theme || 'default'}">${heading('جلسة التركيز','ابقَ حاضرًا حتى نهاية المؤقت.')}<div class="stack">
-  <section class="panel preview active-dial">${dial('00:00','الوقت المتبقي')}</section>${pair(true)}
+  <section class="panel preview active-dial" ${decorationStyle()}>${decorationIcon()}${dial('00:00','الوقت المتبقي')}</section>${pair(true)}
   ${request ? '<section class="panel actions">'+(request.id===user.id?'بانتظار موافقة شريكك على الاستراحة.':'شريكك يطلب استراحة لمدة ٣ دقائق. '+button('answerPause','أوافق','primary','','yes')+button('answerPause','متابعة الجلسة','secondary','','no'))+'</section>':''}
   <section class="panel stack"><div class="actions" aria-label="أصوات الخلفية">${[['rain','مطر'],['cafe','مقهى'],['white','ضوضاء بيضاء']].map(([k,v])=>button('sound',v,ambience===k?'primary':'secondary','volume-2',k)).join('')}</div>
   <div class="actions">${partner?.idle?button('signal','إرسال تنبيه اهتزاز','secondary','zap','nudge'):''}
@@ -174,13 +184,15 @@ function stats() {
   const p = profile || {};
   return `<div class="inner">${heading('الإحصائيات','تابع تقدّمك في جلسات التركيز.') }
   <div class="stack"><div class="stat-grid">${[[p.completed,'جلسات مكتملة'],[p.minutes,'دقائق تركيز'],[p.streak,'أيام متتالية']].map(([n,l])=>`<div class="panel"><strong>${num(n)}</strong><p>${l}</p></div>`).join('')}</div>
+  <section class="panel"><h2>مكافآت دعوات الأصدقاء</h2><p class="bodycopy">حصلت على <strong>${num(p.referralBonus)} نقطة</strong> من الدعوات.</p>
+  <p class="bodycopy">شارك دعوة غرفة مع صديق جديد. إذا أكمل أول جلسة له يحصل كل واحد منكما على ${num(referralPoints)} نقطة.</p></section>
   <section class="panel"><h2>سجل الجلسات</h2>${p.history?.length?p.history.map(r=>`<div class="list-row"><div><strong>${labels[r.status]}</strong><p class="muted">${esc(r.date.slice(0,10))} · ${num(r.minutes)} دقيقة</p></div><span class="${r.reward<0?'gold':'mint'}">${r.reward>0?'+':''}${num(r.reward)} نقطة</span></div>`).join(''):'<p class="bodycopy">سيظهر سجلّك بعد أول جلسة.</p>'}</section></div></div>`;
 }
 function memberships() {
   const active = profile?.plan?.tier;
   const until = profile?.plan?.until;
   return `<section class="membership-section stack" id="memberships" aria-labelledby="membership-title">
-    <div><h2 id="membership-title">عضويات ميثاق</h2><p class="bodycopy">ألوان وتدرجات حصرية وتحكّم بشفافية الزجاج، كل الألقاب والثيمات، جلسات حتى ١٨٠ دقيقة وقوالب تركيز جاهزة واستراحة واحدة لكل جلسة بموافقة شريكك.</p>
+    <div><h2 id="membership-title">عضويات ميثاق</h2><p class="bodycopy">ألوان وتدرجات حصرية وتحكّم بشفافية الزجاج، كل الألقاب والثيمات، جلسات حتى ١٨٠ دقيقة واستراحة واحدة لكل جلسة بموافقة شريكك.</p>
     ${active==='pro' && until ? '<p class="bodycopy">برو مفعّل حتى '+new Date(until).toLocaleDateString('ar')+'</p>' : ''}</div>
     <div class="store-grid">${Object.entries(plans).map(([key,plan])=>{
       const price = profile?.prices?.[key];
@@ -205,7 +217,7 @@ function store() {
   <div class="store-grid">${Object.entries(items).filter(([key,x])=>key!=='marathon' && x[0]===category).map(([key,[group,label,cost,symbol,desc]])=>{
     const count = p?.inventory[key] || 0;
     const expires = p?.cosmetics?.[key];
-    const collectible = [1,2].includes(group);
+    const collectible = [1,2,4].includes(group);
     const available = collectible && (isPaid() || (group===2 ? expires : count));
     const equipped = Object.values(p?.equipped || {}).includes(key);
     const detail = collectible && isPaid() ? 'مشمول في العضوية' : group===2 && expires
@@ -229,9 +241,11 @@ function adminPage() {
         const plan = plans[student.plan.tier];
         const status = student.banned ? 'محظور' : plan?.title || 'مجاني';
         return `<article class="admin-row"><div><strong>${esc(student.name)}</strong>
-        <p class="bodycopy">${esc(student.handle?'@'+student.handle+' · ':'')}${esc(student.id)} · ${status}</p></div>
+        <p class="bodycopy">${esc(student.handle?'@'+student.handle+' · ':'')}${esc(student.id)} · ${status} · ${num(student.points)} نقطة</p></div>
         <form class="actions admin-student-form" data-student="${esc(student.id)}">
           ${!student.banned && student.plan.tier!=='special'?`<select name="plan" aria-label="الباقة"><option value="pro">برو</option><option value="special">سبيشل</option></select><button class="secondary" value="grant">${icon('circle-check')} فعّل</button>`:''}
+          ${plan?button('confirmAdminRevoke','إزالة العضوية','danger','user-round-minus',student.id):''}
+          ${!student.banned?`<input name="points" type="number" min="1" step="1" inputmode="numeric" placeholder="النقاط" aria-label="عدد النقاط"><button class="secondary" value="points">${icon('sparkles')} أضف نقاطًا</button>`:''}
           ${!student.admin?`<button class="${student.banned?'secondary':'danger'}" value="${student.banned?'unban':'ban'}">${student.banned?'رفع الحظر':'حظر'}</button>`:''}
         </form></article>`;
       }).join('') || '<p class="bodycopy">'+(adminData?'لم تظهر حسابات مطابقة.':'جارٍ تحميل الحسابات…')+'</p>'}</section>
@@ -286,6 +300,37 @@ function adminAccessDetails() {
     ${id && /^[0-9]+$/.test(id) ? '<p class="bodycopy">معرّف الحساب الحالي <b dir="ltr">'+esc(id)+'</b></p>' : ''}</details>`;
 }
 
+function customFill({fill,first,second}) {
+  return fill==='gradient' ? 'linear-gradient(130deg,'+first+','+second+')' : first;
+}
+function customPaletteForm(custom={fill:'gradient',first:'#94e8cc',second:'#9db9ff'}) {
+  return `<form id="custom-palette-form" class="appearance-card custom-palette">
+    <h3>ألواني المخصصة</h3>
+    <label>نوع التعبئة <select name="fill"><option value="solid" ${custom.fill==='solid'?'selected':''}>لون ثابت</option>
+      <option value="gradient" ${custom.fill==='gradient'?'selected':''}>تدرّج</option></select></label>
+    <div class="actions"><label>اللون الأول <input name="first" type="color" value="${esc(custom.first)}"></label>
+      <label id="custom-second" ${custom.fill==='solid'?'hidden':''}>اللون الثاني <input name="second" type="color" value="${esc(custom.second)}"></label></div>
+    <div id="color-preview" class="custom-preview" style="background:${customFill(custom)}"></div>
+    <button class="primary">${icon('palette')} احفظ الألوان</button>
+  </form>`;
+}
+function readCustomForm(form) {
+  const data = new FormData(form);
+  return {fill:data.get('fill'),first:data.get('first'),second:data.get('second')};
+}
+dialog.addEventListener('input',event=>{
+  const form = event.target.closest('#custom-palette-form');
+  if (!form) return;
+  const custom = readCustomForm(form);
+  form.querySelector('#custom-second').hidden = custom.fill!=='gradient';
+  form.querySelector('#color-preview').style.background = customFill(custom);
+});
+dialog.addEventListener('submit',event=>{
+  if (event.target.id!=='custom-palette-form') return;
+  event.preventDefault();
+  emit('customPalette',readCustomForm(event.target));
+});
+
 function openAppearance() {
   if (dialog.open && !appearanceOpen) return;
   appearanceOpen = true;
@@ -293,18 +338,18 @@ function openAppearance() {
   dialog.innerHTML = `<div class="stack"><div class="appearance-head"><h2>مظهر المنصة</h2>${button('close','إغلاق','plain','x')}</div>
     <section class="appearance-card"><h3>وضع العرض</h3><div class="pair">${Object.entries({light:['نهاري','sun'],dark:['ليلي','moon']}).map(([mode,[label,symbol]])=>
       `<button type="button" class="mode-option ${mode}" data-action="mode" data-value="${mode}" aria-pressed="${mode===appearance.mode}">${icon(symbol)} ${label}</button>`).join('')}</div></section>
-    <section class="appearance-card"><h3>الألوان</h3><div class="palette-grid">${Object.entries(palettes).map(([key,palette])=>{
+    <section class="appearance-card"><h3>الألوان</h3><div class="palette-grid">${Object.entries(palettes).filter(([key])=>key!=='custom' || profile?.appearance?.custom).map(([key,palette])=>{
       const locked = palette.premium && !isPaid();
       return `<button type="button" class="palette-option" data-action="palette" data-value="${key}" aria-pressed="${appearance.palette===key}">
-        <span class="swatch" style="background:${palette.swatch}">${locked?icon('lock-keyhole'):''}</span>${palette.label}</button>`;
+        <span class="swatch" style="background:${key==='custom'?customFill(appearance.custom):palette.swatch}">${locked?icon('lock-keyhole'):''}</span>${palette.label}</button>`;
     }).join('')}</div>${!isPaid()?'<p class="bodycopy">الزمردي والأزرق متاحان للجميع. التدرجات والألوان الأخرى مع برو وسبيشل.</p>':''}</section>
+    ${isPaid()?customPaletteForm(appearance.custom):''}
     <section class="appearance-card glass-settings">
       <label for="glass-range">${icon(isPaid()?'droplets':'lock-keyhole')} شفافية الزجاج <output id="glass-value" for="glass-range">${num(appearance.transparency)}٪</output></label>
       <input id="glass-range" type="range" min="${glassRange.min}" max="${glassRange.max}" value="${appearance.transparency}" ${isPaid()?'':'disabled aria-describedby="glass-lock"'}>
       ${isPaid()?'':'<p class="bodycopy" id="glass-lock">تحكّم بالشفافية مع برو وسبيشل.</p>'}
     </section>
     ${!isPaid() && room?.phase!=='active' ? button('seePlans','عرض العضويات','secondary','crown') : ''}
-    ${profile?.admin && room?.phase!=='active' ? button('openAdmin','لوحة الإدارة','secondary','shield') : ''}
     ${adminAccessDetails()}</div>`;
   if (!dialog.open) dialog.showModal();
 }
@@ -345,6 +390,11 @@ function applyAppearance() {
   const {mode,palette} = profile?.appearance || defaultAppearance;
   document.documentElement.dataset.mode = mode;
   document.documentElement.dataset.palette = palette;
+  const custom = profile?.appearance?.custom;
+  if (palette==='custom' && custom) {
+    document.documentElement.style.setProperty('--custom-color',custom.first);
+    document.documentElement.style.setProperty('--custom-fill',customFill(custom));
+  }
   const control = document.querySelector('#appearance-toggle');
   const label = mode==='dark'?'الوضع النهاري':'الوضع الليلي';
   if (control.getAttribute('aria-label') !== label) {
@@ -481,6 +531,7 @@ function invitePanel() {
   if (room.members.length === 2) return '';
   const url = inviteUrl();
   return `<section class="panel stack invite-options"><h2>ادعُ شريكك</h2>
+    <p class="bodycopy">${icon('gift')} عند إتمام صديقك أول جلسة له، تحصلان على ${num(referralPoints)} نقطة لكل واحد منكما.</p>
     <div class="invite-code"><label>رمز الغرفة<input id="invite-code" dir="ltr" value="${esc(room.code)}" readonly></label>
     ${button('copyCode','نسخ الرمز','secondary','hash')}</div>
     ${url?`<label class="field invite-field">رابط الدعوة<input id="invite-url" dir="ltr" value="${esc(url)}" readonly></label>
@@ -575,6 +626,8 @@ document.addEventListener('click',event=>{
     tab='admin'; render(); window.scrollTo({top:0,behavior:'instant'});
     adminRequest('adminList',{search:adminSearch});
   }
+  else if (action==='confirmAdminRevoke') modal('إزالة العضوية','سيعود الحساب إلى الباقة المجانية.',button('adminRevoke','إزالة العضوية','danger','user-round-minus',value)+button('close','رجوع','secondary'));
+  else if (action==='adminRevoke') { dialog.close(); adminRequest('adminRevoke',{student:value}); }
   else if (action==='adminCopy') {
     navigator.clipboard?.writeText(value).then(()=>toast('نُسخ الكود.'),()=>toast('حدد الكود وانسخه يدويًا.'));
   }
@@ -583,15 +636,7 @@ document.addEventListener('click',event=>{
   else if (action==='invite') shareInvite(b);
   else if (action==='copyInvite') copyInvite('#invite-url','نُسخ رابط الدعوة.');
   else if (action==='copyCode') copyInvite('#invite-code','نُسخ رمز الغرفة.');
-  else if (action==='template') {
-    if (!isPaid()) return toast('القوالب متاحة مع برو وسبيشل.');
-    const template = sessionTemplates[value];
-    if (!template) return;
-    chosen = template.minutes;
-    goal = template.goal;
-    render(true);
-    document.querySelector('[name="goal"]')?.focus();
-  } else if (action==='acceptInvite') {
+  else if (action==='acceptInvite') {
     if (!incomingInvite || (room && room.phase!=='outcome')) return;
     invite=incomingInvite.code; incomingInvite=null; inviteDismissed=false;
     revisited=room?.phase==='outcome'; tab='home'; render(true);
@@ -631,7 +676,8 @@ page.addEventListener('submit',event=>{
     else {
       const student = formElement.dataset.student;
       const operation = event.submitter?.value;
-      if (operation==='grant') adminRequest('adminGrant',{student,plan:form.get('plan')});
+      if (operation==='points') adminRequest('adminPoints',{student,points:Number(form.get('points'))});
+      else if (operation==='grant') adminRequest('adminGrant',{student,plan:form.get('plan')});
       else if (operation==='ban' || operation==='unban') adminRequest('adminBan',{student,banned:operation==='ban'});
     }
     return;
@@ -679,7 +725,9 @@ socket.on('connect_error',error=>{
 });
 socket.on('disconnect',()=>{ if (!blocked) toast('انقطع الاتصال. جارٍ إعادة المحاولة.'); });
 function updateProfile(data) {
-  const changed = profile?.appearance?.mode !== data.appearance?.mode || profile?.appearance?.palette !== data.appearance?.palette || profile?.plan?.tier !== data.plan?.tier || profile?.adminAccess !== data.adminAccess;
+  const bonus = profile ? data.referralBonus - profile.referralBonus : 0;
+  if (bonus>0) toast('وصلتك '+num(bonus)+' نقطة من دعوة صديق.');
+  const changed = profile?.appearance?.mode !== data.appearance?.mode || profile?.appearance?.palette !== data.appearance?.palette || profile?.plan?.tier !== data.plan?.tier || profile?.adminAccess !== data.adminAccess || JSON.stringify(profile?.appearance?.custom) !== JSON.stringify(data.appearance?.custom);
   profile = data;
   clearTimeout(expiryTimer);
   const expires = [data.plan?.until,...Object.values(data.cosmetics || {})].filter(value=>value>data.now);
