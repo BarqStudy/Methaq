@@ -1,6 +1,8 @@
 import { items,sections } from './catalog.js';
+import { readRoomInvite,roomInviteUrl } from './invite.js';
 
-const telegramLaunch = /(?:^#|[&?])tgWebApp/.test(location.hash) || sessionStorage.getItem('__telegram__initParams');
+const telegramLaunch = /(?:^#|[&?])tgWebApp/.test(location.hash) || new URLSearchParams(location.search).has('tgWebAppStartParam')
+  || sessionStorage.getItem('__telegram__initParams');
 if (telegramLaunch && !window.Telegram?.WebApp) {
   await new Promise(resolve => {
     const script = document.createElement('script');
@@ -21,7 +23,7 @@ const page = document.querySelector('#page');
 const dialog = document.querySelector('#dialog');
 const notice = document.querySelector('#notice');
 dialog.addEventListener('cancel',event=>{ if (dialog.querySelector('#check-deadline')) event.preventDefault(); });
-const invite = tg?.initDataUnsafe?.start_param || new URLSearchParams(location.search).get('room');
+const invite = readRoomInvite({ startParam:tg?.initDataUnsafe?.start_param, hash:location.hash, search:location.search });
 const icon = (name) => '<i aria-hidden="true" data-icon="'+name+'" style="--icon:url(/icons/'+name+'.svg)"></i>';
 document.querySelectorAll('i[data-icon]').forEach(i => i.style.setProperty('--icon','url(/icons/'+i.dataset.icon+'.svg)'));
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -92,7 +94,7 @@ const pair = (active) => '<div class="pair">'+person(room.members.find(p=>p.id==
 function lobby() {
   const me = room.members.find(p=>p.id===user?.id);
   return `<div class="inner">${heading('غرفة الانتظار','جلسة تركيز لمدة '+num(room.minutes)+' دقيقة')}<div class="stack">${pair(false)}
-  ${button('invite','مشاركة الدعوة عبر تليجرام','secondary','send')}
+  ${invitePanel()}
   <section class="panel"><h2>ميثاق الجلسة</h2><p class="bodycopy">أتعهد بالبقاء حاضرًا والتركيز على هدفي. تمنحنا المنصة ٥٠ نقطة إنجاز و٢٠ نقطة تعاون لكل منا عند الإتمام. عند الانسحاب تُحرق حتى ٢٠ نقطة من رصيد المنسحب، وتمنح المنصة شريكه ٣٠ نقطة صمود.</p>
   ${room.pact?'<p class="bodycopy">الميثاق التشجيعي: '+esc(room.pact)+'</p>':''}</section>
   ${me?.ready?'<p class="tag">وافقت على الميثاق. بانتظار شريكك.</p>':button('ready','أوافق وأنا مستعد','primary','lock-keyhole')}
@@ -226,15 +228,41 @@ function sound(type, toggle=true) {
   render(true);
 }
 function stopSound() { if (audio) audio.close(); audio=null; ambience=null; }
-async function shareInvite() {
-  const handle = bot?.replace(/^@/,'');
-  const url = handle ? 'https://t.me/'+handle+(shortName?'/'+shortName:'')+'?startapp='+room.id : location.origin+'/?room='+room.id;
-  const share = 'https://t.me/share/url?url='+encodeURIComponent(url)+'&text='+encodeURIComponent('انضم إليّ في جلسة ميثاق التركيز');
-  if (tg?.initData) tg.openTelegramLink(share);
-  else {
-    try { await navigator.clipboard.writeText(url); toast('نُسخ رابط الدعوة.'); }
-    catch { window.open(share,'_blank','noopener'); }
+function inviteUrl() {
+  return roomInviteUrl({ bot, shortName, code:room.id, guestOrigin:tg?.initData ? null : location.origin });
+}
+function invitePanel() {
+  if (room.members.length === 2) return '';
+  const url = inviteUrl();
+  if (!url) return '<p class="bodycopy">رابط الدعوة غير متاح. تحقّق من إعداد اسم البوت في الاستضافة.</p>';
+  return `<section class="panel stack">
+    <label class="field invite-field">رابط الدعوة<input id="invite-url" dir="ltr" value="${esc(url)}" readonly></label>
+    <div class="actions">${button('copyInvite','نسخ رابط الدعوة','primary','copy')}
+    ${button('invite','مشاركة الدعوة عبر تليجرام','secondary','send')}</div>
+  </section>`;
+}
+async function copyInvite() {
+  const field = document.querySelector('#invite-url');
+  if (!field) return;
+  try {
+    await navigator.clipboard.writeText(field.value);
+    toast('نُسخ رابط الدعوة. أرسله لصديقك في تليجرام.');
+  } catch {
+    field.focus();
+    field.select();
+    field.setSelectionRange(0,field.value.length);
+    toast('اضغط مطولًا على الرابط واختر «نسخ».');
   }
+}
+function shareInvite() {
+  const url = inviteUrl();
+  if (!url) return;
+  if (!tg?.initData) return copyInvite();
+  const share = new URL('https://t.me/share/url');
+  share.searchParams.set('url',url);
+  share.searchParams.set('text','انضم إليّ في جلسة ميثاق التركيز');
+  try { tg.openTelegramLink(share.href); }
+  catch { return copyInvite(); }
 }
 async function shareCard() {
   await document.fonts.ready;
@@ -270,6 +298,7 @@ document.addEventListener('click',event=>{
     chosen=+value; render(true);
   } else if (action==='ignore') { inviteDismissed=true; render(true); }
   else if (action==='invite') shareInvite();
+  else if (action==='copyInvite') copyInvite();
   else if (action==='filter') { category=+value; render(true); }
   else if (action==='sound') sound(value);
   else if (action==='withdraw') modal('هل تريد الانسحاب؟','يُسجّل الانسحاب وتُخصم حتى ٢٠ نقطة من رصيدك.',button('confirmWithdraw','تأكيد الانسحاب','danger')+button('close','متابعة التركيز','secondary'));
