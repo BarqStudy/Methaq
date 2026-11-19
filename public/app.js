@@ -45,7 +45,7 @@ let viewKey, noticeTimeout, revisited, lastActivity = 0, lastCheck, audio, ambie
 let preparingInvite = false, incomingInvite;
 let appearanceOpen = false, checkoutOpen = false, expiryTimer, glassPreview, glassRequest = 0;
 const isPaid = () => ['pro','special'].includes(profile?.plan?.tier);
-const marathonAvailable = () => isPaid() || profile?.inventory?.marathon;
+let adminData, adminSearch = '', adminBusy = false, blocked = false;
 const guestId = sessionStorage.getItem('methaq-guest') || Array.from(crypto.getRandomValues(new Uint8Array(18)), b=>b.toString(16).padStart(2,'0')).join('');
 sessionStorage.setItem('methaq-guest',guestId);
 const name = new URLSearchParams(location.search).get('name') || 'ضيف ميثاق';
@@ -62,6 +62,7 @@ function emit(event,payload={}) {
     else if (['buy','equip','protect'].includes(event)) toast('تم تحديث مخزونك.');
     else if (event==='appearance') toast('تم حفظ المظهر.');
     else if (event==='directInvite') toast('أُرسلت الدعوة داخل ميثاق.');
+    else if (event==='redeemCode') toast('تم تفعيل عضويتك.');
   });
 }
 function avatar(person) {
@@ -72,7 +73,8 @@ function avatar(person) {
     : '<span class="'+classes+'" aria-hidden="true">'+(esc(person?.name?.[0]) || icon('user-round'))+'</span>';
 }
 function account() {
-  const p = profile || {reliability:100};
+  const p = profile || {};
+  document.querySelector('#admin-toggle').hidden = !p.admin || blocked;
   const accountElement = document.querySelector('#account');
   const content = `<span class="metric streak-stat"><span class="metric-icon">${icon('flame')}</span><span>السلسلة <strong>${num(p.streak)}</strong></span></span>
     <span class="metric points-stat"><span class="metric-icon">${icon('sparkles')}</span><span>النقاط <strong>${num(p.points)}</strong></span></span>`;
@@ -84,14 +86,15 @@ function account() {
 const button = (action,label,type='secondary',symbol='',value='') => `<button type="button" class="${type}" data-action="${action}" data-value="${value}">${symbol ? icon(symbol):''}${label}</button>`;
 const heading = (title,caption='') => `<div class="heading"><h1>${title}</h1>${caption?'<p>'+caption+'</p>':''}</div>`;
 const isInvite = () => invite && !inviteDismissed && (!room || revisited);
-const durationAllowed = (minutes) => minutes===180 ? isPaid() : minutes!==120 || marathonAvailable();
+const durationAllowed = (minutes) => minutes<120 || isPaid();
 const dialProgress = (minutes) => minutes<=25 ? Math.max(0,minutes) : Math.min(100,25+(minutes-25)*75/155);
 function studentProfile() {
   const equipped = profile?.equipped;
   const tier = profile?.plan?.tier;
   return `<section class="panel student-profile">
     ${avatar({...user,equipped})}<div><strong>${esc(user?.name || 'ضيف ميثاق')}</strong>
-    <small>${items[equipped?.title]?.[1] || 'رفيق تركيز'}</small></div>
+    <small>${items[equipped?.title]?.[1] || 'رفيق تركيز'}</small>
+    ${tg?.initData && user?.id ? '<small>معرّف تليجرام <b dir="ltr">'+esc(user.id)+'</b></small>' : ''}</div>
     ${tier && tier!=='free' ? '<span class="tag">'+icon(plans[tier].icon)+' '+plans[tier].title+'</span>' : ''}</section>`;
 }
 function pendingInvite() {
@@ -194,8 +197,12 @@ function store() {
   const p = profile;
   return `<div class="inner store-page">${heading('متجر ميثاق','رصيدك الحالي '+num(p?.points)+' نقطة')}
   ${memberships()}
+  <form id="redeem-code-form" class="panel join-code redeem-code">
+    <label class="field">كود العضوية<input name="code" dir="ltr" maxlength="21" placeholder="MTHQ-…" required></label>
+    <button class="secondary">${icon('ticket-check')} فعّل الكود</button>
+  </form>
   <div class="filters">${sections.map((x,i)=>button('filter',x,i===category?'selected':'','',i)).join('')}</div>
-  <div class="store-grid">${Object.entries(items).filter(([,x])=>x[0]===category).map(([key,[group,label,cost,symbol,desc]])=>{
+  <div class="store-grid">${Object.entries(items).filter(([key,x])=>key!=='marathon' && x[0]===category).map(([key,[group,label,cost,symbol,desc]])=>{
     const count = p?.inventory[key] || 0;
     const expires = p?.cosmetics?.[key];
     const collectible = [1,2].includes(group);
@@ -209,6 +216,60 @@ function store() {
       ${available?button('equip',equipped?'إلغاء التفعيل':'تفعيل',equipped?'primary':'secondary','',key):button('buy','شراء','secondary','',key)}
       ${key==='eraser'&&count?button('protect','استخدام','plain','',key):''}</article>`;
   }).join('')}</div></div>`;
+}
+
+function adminPage() {
+  if (!profile?.admin) return '';
+  const {students=[],codes=[]} = adminData || {};
+  return `<div class="inner admin-page">${heading('لوحة الإدارة','إدارة حسابات الطلاب وأكواد العضوية')}
+    <div class="stack"><section class="panel stack"><h2>الطلاب</h2>
+      <form id="admin-search-form" class="join-code"><label class="field">ابحث عن طالب<input name="search" value="${esc(adminSearch)}" placeholder="الاسم أو @username أو معرّف تليجرام"></label>
+      <button class="secondary">${icon('search')} بحث</button></form>
+      ${students.map(student=>{
+        const plan = plans[student.plan.tier];
+        const status = student.banned ? 'محظور' : plan?.title || 'مجاني';
+        return `<article class="admin-row"><div><strong>${esc(student.name)}</strong>
+        <p class="bodycopy">${esc(student.handle?'@'+student.handle+' · ':'')}${esc(student.id)} · ${status}</p></div>
+        <form class="actions admin-student-form" data-student="${esc(student.id)}">
+          ${!student.banned && student.plan.tier!=='special'?`<select name="plan" aria-label="الباقة"><option value="pro">برو</option><option value="special">سبيشل</option></select><button class="secondary" value="grant">${icon('circle-check')} فعّل</button>`:''}
+          ${!student.admin?`<button class="${student.banned?'secondary':'danger'}" value="${student.banned?'unban':'ban'}">${student.banned?'رفع الحظر':'حظر'}</button>`:''}
+        </form></article>`;
+      }).join('') || '<p class="bodycopy">'+(adminData?'لم تظهر حسابات مطابقة.':'جارٍ تحميل الحسابات…')+'</p>'}</section>
+    <section class="panel stack"><h2>أكواد العضوية</h2><p class="bodycopy">كل كود يفعّل العضوية لحساب واحد.</p>
+      <form id="admin-code-form" class="actions"><label>الباقة <select name="plan"><option value="pro">برو</option><option value="special">سبيشل</option></select></label>
+      <button class="primary">${icon('ticket-plus')} أنشئ كودًا</button></form>
+      ${codes.map(entry=>`<div class="admin-row"><div><code dir="ltr">${esc(entry.code)}</code><p class="bodycopy">${plans[entry.plan]?.title} · ${entry.redeemed_by?'مستخدم':'متاح'}</p></div>
+      ${!entry.redeemed_by?button('adminCopy','نسخ الكود','secondary','copy',entry.code):''}</div>`).join('')}</section></div></div>`;
+}
+async function adminRequest(event,payload={}) {
+  if (!profile?.admin || !socket?.connected || adminBusy) return;
+  adminBusy = true;
+  try {
+    const result = await socket.timeout(5000).emitWithAck(event,payload);
+    if (result.error) throw new Error(result.error);
+    if (event!=='adminList') {
+      toast(result.code?'تم إنشاء الكود.':'تم تحديث الحساب.');
+    }
+    const data = event==='adminList' ? result : await socket.timeout(5000).emitWithAck('adminList',{search:adminSearch});
+    if (data.error) throw new Error(data.error);
+    adminData = data;
+    if (tab==='admin') render(true);
+  } catch (error) {
+    toast(error.message || 'تعذّر تحديث لوحة الإدارة.');
+  } finally {
+    adminBusy = false;
+  }
+}
+
+function premiumDuration(minutes) {
+  if (tg?.initData) tg.HapticFeedback?.selectionChanged();
+  dialog.innerHTML = `<div class="stack upgrade-dialog">
+    <span class="art-plain" style="--art:#f2bc57">${icon('crown')}</span>
+    <h2>جلسة ${num(minutes)} دقيقة للمشتركين</h2>
+    <p class="bodycopy">افتح جلسات التركيز الطويلة مع برو أو سبيشل.</p>
+    <div class="actions">${button('seePlans','عرض الاشتراكات','primary','sparkles')}${button('close','رجوع','plain')}</div>
+  </div>`;
+  if (!dialog.open) dialog.showModal();
 }
 
 function openAppearance() {
@@ -317,7 +378,7 @@ function render(force=false) {
   const phase = !revisited && room?.phase;
   const key = [tab,phase,room?.id,isInvite()].join('|');
   if (force || key!==viewKey || ['active','lobby','outcome'].includes(phase)) {
-    const content = tab==='stats'?stats():tab==='store'?store():phase==='lobby'?lobby():phase==='active'?active():phase==='outcome'?outcome():home();
+    const content = blocked ? '<div class="inner">'+heading('الحساب محظور','تواصل مع مشرف ميثاق للمساعدة.')+'</div>' : tab==='admin'?adminPage():tab==='stats'?stats():tab==='store'?store():phase==='lobby'?lobby():phase==='active'?active():phase==='outcome'?outcome():home();
     if (page.dataset.content !== content) {
       const previous = document.activeElement;
       const selector = previous?.dataset.action && '[data-action="'+previous.dataset.action+'"][data-value="'+previous.dataset.value+'"]';
@@ -463,6 +524,7 @@ async function shareCard() {
   setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 document.addEventListener('click',event=>{
+  if (blocked) return;
   const nav = event.target.closest('[data-tab]');
   if (nav) {
     if (room?.phase==='active' && nav.dataset.tab!=='home') return toast('التنقل متاح بعد انتهاء جلسة التركيز.');
@@ -477,7 +539,7 @@ document.addEventListener('click',event=>{
   if (!b) return;
   const {action,value}=b.dataset;
   if (action==='duration') {
-    if (!durationAllowed(+value)) return toast(+value===180?'جلسة ١٨٠ دقيقة للمشتركين.':'تحتاج إلى تذكرة الماراثون من المتجر.');
+    if (!durationAllowed(+value)) return premiumDuration(+value);
     chosen=+value; render(true);
   } else if (action==='appearanceMenu') openAppearance();
   else if (action==='mode') emit('appearance',{mode:value,palette:profile?.appearance?.palette || 'emerald'});
@@ -490,6 +552,14 @@ document.addEventListener('click',event=>{
     if (dialog.open) dialog.close();
     tab='store'; render();
     document.querySelector('#memberships')?.scrollIntoView({block:'start'});
+  }
+  else if (action==='openAdmin') {
+    if (!profile?.admin || room?.phase==='active') return;
+    tab='admin'; render(); window.scrollTo({top:0,behavior:'instant'});
+    adminRequest('adminList',{search:adminSearch});
+  }
+  else if (action==='adminCopy') {
+    navigator.clipboard?.writeText(value).then(()=>toast('نُسخ الكود.'),()=>toast('حدد الكود وانسخه يدويًا.'));
   }
   else if (action==='checkout') checkout(value,b);
   else if (action==='ignore') { inviteDismissed=true; render(true); }
@@ -528,6 +598,27 @@ page.addEventListener('input',event=>{
   if (page.querySelector('#session-form')) page.dataset.content=home();
 });
 page.addEventListener('submit',event=>{
+  const formElement = event.target;
+  if (formElement.id==='redeem-code-form') {
+    event.preventDefault();
+    emit('redeemCode',{code:new FormData(formElement).get('code')});
+    return;
+  }
+  if (formElement.id==='admin-search-form' || formElement.id==='admin-code-form' || formElement.classList.contains('admin-student-form')) {
+    event.preventDefault();
+    const form = new FormData(formElement);
+    if (formElement.id==='admin-search-form') {
+      adminSearch=form.get('search');
+      adminRequest('adminList',{search:adminSearch});
+    } else if (formElement.id==='admin-code-form') adminRequest('adminCode',{plan:form.get('plan')});
+    else {
+      const student = formElement.dataset.student;
+      const operation = event.submitter?.value;
+      if (operation==='grant') adminRequest('adminGrant',{student,plan:form.get('plan')});
+      else if (operation==='ban' || operation==='unban') adminRequest('adminBan',{student,banned:operation==='ban'});
+    }
+    return;
+  }
   if (event.target.id==='direct-invite-form' || event.target.id==='join-code-form') {
     event.preventDefault();
     const form = new FormData(event.target);
@@ -556,8 +647,20 @@ for (const event of ['pointerdown','keydown','scroll']) document.addEventListene
 },{passive:true});
 render();
 socket = window.io({auth:{initData:tg?.initData,guest:guestId,name}});
-socket.on('connect_error', error=>toast(error.message));
-socket.on('disconnect',()=>toast('انقطع الاتصال. جارٍ إعادة المحاولة.'));
+function showBan(message) {
+  blocked=true;
+  room=null;
+  stopSound();
+  if (dialog.open) dialog.close();
+  toast(message);
+  render(true);
+}
+socket.on('banned',showBan);
+socket.on('connect_error',error=>{
+  if (error.message==='حُظر هذا الحساب من استخدام ميثاق.') showBan(error.message);
+  else toast(error.message);
+});
+socket.on('disconnect',()=>{ if (!blocked) toast('انقطع الاتصال. جارٍ إعادة المحاولة.'); });
 function updateProfile(data) {
   const changed = profile?.appearance?.mode !== data.appearance?.mode || profile?.appearance?.palette !== data.appearance?.palette || profile?.plan?.tier !== data.plan?.tier;
   profile = data;

@@ -407,3 +407,26 @@ body {padding-bottom:calc(88px + var(--dock-bottom))}
   .top-metrics {justify-self:stretch;padding:0}
   .top-metrics .metric,.top-metrics .metric+.metric {padding:4px 7px}
 }
+
+#admin-toggle {grid-area:admin;min-height:44px}
+#admin-toggle[hidden] {display:none}
+.top-inner:has(#admin-toggle:not([hidden])) {
+  grid-template-columns:auto auto 44px auto minmax(0,1fr);
+  grid-template-areas:"brand upgrade appearance admin metrics";
+}
+.redeem-code {margin-bottom:18px}
+.admin-page h2 {font-size:19px;font-weight:700}
+.admin-row {display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:11px 0;border-top:1px solid var(--line)}
+.admin-page select {background:var(--surface);color:var(--text);border:1px solid var(--line);border-radius:11px;padding:7px}
+.admin-page code {font-family:monospace;user-select:all}
+.upgrade-dialog {padding:7px;border-radius:19px;background:radial-gradient(ellipse at 86% 4%,color-mix(in srgb,var(--gold) 18%,transparent),transparent 62%)}
+.upgrade-dialog h2 {font-size:22px;font-weight:700}
+.upgrade-dialog .art-plain {width:52px;height:52px;box-shadow:0 8px 22px color-mix(in srgb,var(--gold) 20%,transparent)}
+@media (max-width:720px) {
+  .top-inner:has(#admin-toggle:not([hidden])) {
+    grid-template-columns:minmax(0,1fr) auto 44px auto;
+    grid-template-areas:"brand upgrade appearance admin" "metrics metrics metrics metrics";
+  }
+  #admin-toggle {padding-inline:7px}
+  #admin-toggle i {display:none}
+}

@@ -11,6 +11,8 @@ import { createMembership,paidPrices } from './membership.js';
 import { roomInviteUrl } from './public/invite.js';
 
 const { BOT_TOKEN, BOT_USERNAME, APP_SHORT_NAME, PUBLIC_URL } = process.env;
+const telegramIdPattern = /^[1-9][0-9]{0,15}$/;
+const admins = new Set((process.env.ADMIN_TELEGRAM_IDS || '').split(',').map(id=>id.trim()).filter(id=>telegramIdPattern.test(id)));
 const bot = BOT_TOKEN ? new Telegraf(BOT_TOKEN) : null;
 const dev = process.env.NODE_ENV !== 'production' &&
   (process.env.DEV_GUESTS === '1' || (!BOT_TOKEN && process.env.DEV_GUESTS === undefined));
@@ -19,6 +21,8 @@ if (dbPath !== ':memory:') mkdirSync(dirname(dbPath), { recursive: true });
 const db = new DatabaseSync(dbPath);
 db.exec(`
   PRAGMA journal_mode = WAL;
+  CREATE TABLE IF NOT EXISTS telegram_students(id TEXT PRIMARY KEY,name TEXT NOT NULL,handle TEXT);
+  CREATE TABLE IF NOT EXISTS banned_students(id TEXT PRIMARY KEY, banned_by TEXT NOT NULL, banned_at INTEGER NOT NULL);
   CREATE TABLE IF NOT EXISTS players(id TEXT PRIMARY KEY, points INTEGER DEFAULT 0, streak INTEGER DEFAULT 0,
     last_day TEXT, inventory TEXT DEFAULT '{}', equipped TEXT DEFAULT '{}');
   CREATE TABLE IF NOT EXISTS results(room TEXT, player TEXT, status TEXT, reward INTEGER, minutes INTEGER,
@@ -42,6 +46,22 @@ const transaction = (fn) => {
   try { const result = fn(); db.exec('COMMIT'); return result; } catch (error) { db.exec('ROLLBACK'); throw error; }
 };
 
+// Marathon tickets were replaced by membership access. Refund any remaining inventory once.
+run(`UPDATE players SET points=points+CAST(json_extract(inventory,'$.marathon') AS INTEGER)*?,
+  inventory=json_remove(inventory,'$.marathon') WHERE json_extract(inventory,'$.marathon')>0`,items.marathon[2]);
+
+const isBanned = (id) => Boolean(query('SELECT 1 FROM banned_students WHERE id=?',id));
+const studentRows = db.prepare(`SELECT id,name,handle FROM telegram_students
+  WHERE ?='' OR id=? OR instr(lower(name),?)>0 OR instr(coalesce(handle,''),?)>0
+  ORDER BY name,id LIMIT 30`);
+const bannedMessage = 'حُظر هذا الحساب من استخدام ميثاق.';
+function updatePlayer(id) {
+  if (!query('SELECT 1 FROM players WHERE id=?',id)) return;
+  io.to('player:'+id).emit('profile',profile(id));
+  const room = rooms.get(memberships.get(id));
+  if (room) send(room);
+}
+
 function profile(id) {
   const player = query('SELECT * FROM players WHERE id=?', id);
   const stats = query(`SELECT count(*) FILTER (WHERE status='success') AS completed,
@@ -64,7 +84,7 @@ function profile(id) {
     appearance.transparency = glassRange.defaultValue;
   }
   return { ...player, streak, inventory, equipped, plan, cosmetics, appearance, now:clock.now(),
-    prices:billingEnabled && !id.startsWith('guest:') ? paidPrices : {},
+    admin:admins.has(id), prices:billingEnabled && !id.startsWith('guest:') ? paidPrices : {},
     ...stats, reliability: stats.completed + stats.left ? Math.round(100*stats.completed/(stats.completed+stats.left)) : 100, history };
 }
 
@@ -149,11 +169,40 @@ setInterval(() => {
   }
 }, 1000).unref();
 
-io.use((socket,next) => { try { socket.data.user = authenticate(socket.handshake.auth); next(); } catch (error) { next(error); } });
+function leaveWaitingRoom(room, id) {
+  const playerRoom = 'player:'+id;
+  if (room?.phase !== 'lobby') return;
+  if (room.members[0].id === id) {
+    for (const member of room.members) {
+      memberships.delete(member.id);
+      io.to('player:'+member.id).emit('room',null);
+    }
+    io.in(room.id).socketsLeave(room.id);
+    rooms.delete(room.id);
+    return;
+  }
+  room.members = room.members.filter(p => p.id !== id);
+  for (const p of room.members) p.ready = false;
+  memberships.delete(id);
+  io.in(playerRoom).socketsLeave(room.id);
+  io.to(playerRoom).emit('room',null);
+  if (!room.members.length) rooms.delete(room.id); else send(room);
+}
+
+io.use((socket,next) => {
+  try {
+    const user = authenticate(socket.handshake.auth);
+    if (isBanned(user.id)) fail(bannedMessage);
+    socket.data.user = user;
+    next();
+  } catch (error) { next(error); }
+});
 io.on('connection', (socket) => {
   const user = socket.data.user;
   const { id } = user;
   run('INSERT OR IGNORE INTO players(id) VALUES(?)', id);
+  if (telegramIdPattern.test(id)) run(`INSERT INTO telegram_students(id,name,handle) VALUES(?,?,?)
+    ON CONFLICT(id) DO UPDATE SET name=excluded.name,handle=excluded.handle`,id,user.name,user.handle || null);
   const playerRoom = 'player:'+id;
   socket.join(playerRoom);
   const current = () => rooms.get(memberships.get(id));
@@ -173,6 +222,52 @@ io.on('connection', (socket) => {
       try { fn(payload ?? {}); ack({ ok:true }); } catch (error) { ack({ error:error.message }); }
     });
   }
+  function adminAction(event, fn) {
+    socket.on(event,(payload,ack) => {
+      if (typeof ack!=='function') return;
+      if (!admins.has(id)) return ack({error:'هذه الصفحة للمشرفين.'});
+      try { ack(fn(payload || {})); } catch (error) { ack({error:error.message}); }
+    });
+  }
+  function adminStudent(row) {
+    return {...row,plan:membership.planStatus(row.id),banned:isBanned(row.id),admin:admins.has(row.id)};
+  }
+  adminAction('adminList', ({search}) => {
+    const phrase = typeof search==='string' ? search.trim().replace(/^@/,'').toLowerCase().slice(0,80) : '';
+    const rows = studentRows.all(phrase,phrase,phrase,phrase);
+    if (telegramIdPattern.test(phrase) && !rows.some(row=>row.id===phrase)) rows.unshift({id:phrase,name:'حساب جديد'});
+    return {students:rows.map(adminStudent),codes:membership.codes()};
+  });
+  adminAction('adminGrant', ({student,plan}) => {
+    if (typeof student!=='string' || !telegramIdPattern.test(student) || !Object.hasOwn(plans,plan)) fail('اختر حسابًا وباقة صالحة.');
+    if (isBanned(student)) fail('ارفع الحظر قبل تفعيل العضوية.');
+    if (membership.planStatus(student).tier==='special') fail('سبيشل مفعّلة لهذا الحساب مدى الحياة.');
+    membership.grant(student,plan);
+    updatePlayer(student);
+    return {ok:true};
+  });
+  adminAction('adminBan', ({student,banned}) => {
+    if (typeof student!=='string' || !telegramIdPattern.test(student) || typeof banned!=='boolean') fail('اختر حسابًا صالحًا.');
+    if (admins.has(student)) fail('لا يمكن حظر حساب أحد المشرفين.');
+    if (banned) {
+      run('INSERT OR IGNORE INTO banned_students(id,banned_by,banned_at) VALUES(?,?,?)',student,id,clock.now());
+      io.to('player:'+student).emit('banned',bannedMessage);
+      io.in('player:'+student).disconnectSockets(true);
+      leaveWaitingRoom(rooms.get(memberships.get(student)),student);
+    } else run('DELETE FROM banned_students WHERE id=?',student);
+    return {ok:true};
+  });
+  adminAction('adminCode', ({plan}) => {
+    if (!Object.hasOwn(plans,plan)) fail('اختر باقة صالحة.');
+    return {code:membership.createCode(id,plan)};
+  });
+  action('redeemCode', ({code}) => {
+    if (!telegramIdPattern.test(id)) fail('افتح التطبيق من تليجرام لتفعيل الكود.');
+    const normalized = typeof code==='string' ? code.trim().toUpperCase() : '';
+    if (!/^MTHQ-[A-F0-9]{16}$/.test(normalized)) fail('الكود غير صالح.');
+    if (!membership.redeemCode(id,normalized,transaction)) fail('الكود مستخدم أو حسابك مفعّل بسبيشل.');
+    updatePlayer(id);
+  });
   let nextInviteAt = 0;
   socket.on('prepareInvite', async (_payload, ack) => {
     if (typeof ack !== 'function') return;
@@ -265,8 +360,7 @@ io.on('connection', (socket) => {
   };
   action('create', ({ minutes, goal, pact }) => {
     if (!durations.includes(minutes)) fail('اختر مدة صالحة.');
-    if (minutes === 180 && !isPaid(id)) fail('جلسة ١٨٠ دقيقة متاحة للمشتركين فقط.');
-    if (minutes === 120 && !isPaid(id) && !profile(id).inventory.marathon) fail('تحتاج إلى تذكرة الماراثون.');
+    if (minutes >= 120 && !isPaid(id)) fail('جلسات ١٢٠ و١٨٠ دقيقة للمشتركين فقط.');
     let roomId;
     do { roomId = randomUUID().replaceAll('-',''); }
     while ([...rooms.values()].some(room=>room.code===roomId.slice(0,10).toUpperCase()));
@@ -297,25 +391,7 @@ io.on('connection', (socket) => {
     if (recipientRoom && recipientRoom.phase!=='outcome') fail('شريكك موجود في غرفة أخرى.');
     io.to('player:'+recipient.data.user.id).emit('directInvite',{code:room.id, name:user.name, minutes:room.minutes});
   });
-  action('leaveLobby', () => {
-    const room = current();
-    if (room?.phase !== 'lobby') return;
-    if (room.members[0].id === id) {
-      for (const member of room.members) {
-        memberships.delete(member.id);
-        io.to('player:'+member.id).emit('room',null);
-      }
-      io.in(room.id).socketsLeave(room.id);
-      rooms.delete(room.id);
-      return;
-    }
-    room.members = room.members.filter(p => p.id !== id);
-    for (const p of room.members) p.ready = false;
-    memberships.delete(id);
-    io.in(playerRoom).socketsLeave(room.id);
-    io.to(playerRoom).emit('room',null);
-    if (!room.members.length) rooms.delete(room.id); else send(room);
-  });
+  action('leaveLobby', () => leaveWaitingRoom(current(),id));
   action('ready', () => {
     const room = current();
     if (room?.phase !== 'lobby') return;
@@ -324,12 +400,7 @@ io.on('connection', (socket) => {
     if (starting && room.members.some(member => !io.sockets.adapter.rooms.get('player:'+member.id)?.size)) {
       fail('بانتظار عودة شريكك للاتصال.');
     }
-    if (starting && room.minutes === 180 && !isPaid(room.members[0].id)) fail('تحتاج إلى عضوية فعّالة لبدء ١٨٠ دقيقة.');
-    if (starting && room.minutes === 120) {
-      const host = room.members[0].id;
-      if (!isPaid(host)) use(host,'marathon');
-      io.to('player:'+host).emit('profile',profile(host));
-    }
+    if (starting && room.minutes >= 120 && !isPaid(room.members[0].id)) fail('تحتاج إلى عضوية فعّالة لبدء هذه الجلسة.');
     p.ready = true;
     if (starting) {
       room.phase = 'active';
@@ -397,7 +468,7 @@ io.on('connection', (socket) => {
     send(room);
   });
   action('buy', ({item}) => {
-    if (!Object.hasOwn(items,item)) fail('العنصر غير موجود.');
+    if (!Object.hasOwn(items,item) || item==='marathon') fail('العنصر غير موجود.');
     const [category,,cost] = items[item];
     const { points,inventory,cosmetics } = profile(id);
     if ([1,2].includes(category) && isPaid(id)) fail('العنصر متاح لك ضمن العضوية.');
@@ -456,7 +527,7 @@ if (bot && (billingEnabled || (PUBLIC_URL && process.env.RUN_BOT === '1'))) {
     bot.command('paysupport', ctx => ctx.reply(process.env.PAYMENT_SUPPORT || 'للمساعدة بخصوص عضويتك، تواصل مع مشرف ميثاق التركيز وأرسل معرّف عملية الشراء الظاهر في تليجرام.'));
     bot.on('pre_checkout_query', async ctx => {
       const checkout = ctx.update.pre_checkout_query;
-      const valid = membership.validateCheckout(checkout.invoice_payload,{
+      const valid = !isBanned(String(checkout.from.id)) && membership.validateCheckout(checkout.invoice_payload,{
         user:checkout.from.id, amount:checkout.total_amount, currency:checkout.currency
       });
       await ctx.telegram.answerPreCheckoutQuery(checkout.id,valid,valid ? undefined : 'هذه الفاتورة غير متاحة. افتح التطبيق وابدأ من جديد.');
@@ -467,11 +538,7 @@ if (bot && (billingEnabled || (PUBLIC_URL && process.env.RUN_BOT === '1'))) {
         user:ctx.from.id, amount:payment.total_amount, currency:payment.currency,
         charge:payment.telegram_payment_charge_id
       },transaction);
-      if (player) {
-        io.to('player:'+player).emit('profile',profile(player));
-        const room = rooms.get(memberships.get(player));
-        if (room) send(room);
-      }
+      if (player) updatePlayer(player);
     });
   }
   bot.catch(error => { console.error('تعذّر معالجة تحديث تليجرام.',error.name); throw error; });

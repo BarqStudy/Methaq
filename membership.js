@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomBytes,randomUUID } from 'node:crypto';
 import { defaultAppearance,glassRange,plans } from './public/catalog.js';
 
 const day = 86400000;
@@ -19,6 +19,10 @@ export function createMembership(db, now) {
     CREATE TABLE IF NOT EXISTS appearances (
       player TEXT PRIMARY KEY, mode TEXT NOT NULL, palette TEXT NOT NULL,
       transparency INTEGER NOT NULL DEFAULT ${glassRange.defaultValue}
+    );
+    CREATE TABLE IF NOT EXISTS membership_codes (
+      code TEXT PRIMARY KEY, plan TEXT NOT NULL, created_by TEXT NOT NULL,
+      created INTEGER NOT NULL, redeemed_by TEXT, redeemed_at INTEGER
     );
     CREATE TABLE IF NOT EXISTS membership_invoices (
       payload TEXT PRIMARY KEY, player TEXT NOT NULL, plan TEXT NOT NULL, amount INTEGER NOT NULL,
@@ -47,6 +51,18 @@ export function createMembership(db, now) {
   const setCosmetic = db.prepare(`INSERT INTO cosmetic_expiry(player,item,expires_at) VALUES(?,?,?)
     ON CONFLICT(player,item) DO UPDATE SET expires_at=excluded.expires_at`);
 
+  const addCode = db.prepare('INSERT OR IGNORE INTO membership_codes(code,plan,created_by,created) VALUES(?,?,?,?)');
+  const findCode = db.prepare('SELECT plan,redeemed_by FROM membership_codes WHERE code=?');
+  const useCode = db.prepare('UPDATE membership_codes SET redeemed_by=?,redeemed_at=? WHERE code=? AND redeemed_by IS NULL');
+  const listCodes = db.prepare('SELECT code,plan,created,redeemed_by FROM membership_codes ORDER BY created DESC,rowid DESC LIMIT 30');
+
+  function grant(player, plan) {
+    const existing = readMembership.get(player);
+    const special = plan === 'special';
+    const until = special ? (existing?.pro_until || 0) : Math.max(existing?.pro_until || 0,now()) + 30*day;
+    grantPlan.run(player,until,Number(special));
+  }
+
   function planStatus(player) {
     const row = readMembership.get(player);
     const until = row?.pro_until || 0;
@@ -60,6 +76,23 @@ export function createMembership(db, now) {
 
   return {
     planStatus,
+    grant,
+    codes() { return listCodes.all(); },
+    createCode(admin, plan) {
+      let code;
+      do { code = 'MTHQ-'+randomBytes(8).toString('hex').toUpperCase(); }
+      while (!addCode.run(code,plan,admin,now()).changes);
+      return code;
+    },
+    redeemCode(player, code, transaction) {
+      return transaction(() => {
+        const record = findCode.get(code);
+        if (!record || record.redeemed_by || planStatus(player).tier==='special') return false;
+        if (!useCode.run(player,now(),code).changes) return false;
+        grant(player,record.plan);
+        return true;
+      });
+    },
     appearance(player) { return readAppearance.get(player) || { ...defaultAppearance }; },
     cosmetics(player) {
       return Object.fromEntries(readCosmetics.all(player,now()).map(row=>[row.item,row.expires_at]));
@@ -83,10 +116,7 @@ export function createMembership(db, now) {
         const record = findInvoice.get(payload);
         if (!invoiceMatches(record,payment) || !payment.charge || record.charge || findCharge.get(payment.charge)) return null;
         saveCharge.run(payment.charge,payload);
-        const existing = readMembership.get(record.player);
-        const special = record.plan === 'special';
-        const until = special ? (existing?.pro_until || 0) : Math.max(existing?.pro_until || 0,now()) + 30*day;
-        grantPlan.run(record.player,until,Number(special));
+        grant(record.player,record.plan);
         return record.player;
       });
     }
