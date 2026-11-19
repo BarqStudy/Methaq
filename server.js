@@ -6,7 +6,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { Server } from 'socket.io';
 import { Telegraf, Markup } from 'telegraf';
-import { items,glassRange,palettes,plans,rewards,successReward,durations,referralPoints } from './public/catalog.js';
+import { items,glassRange,palettes,plans,rewards,successReward,durations,referralPoints,breakMinutes } from './public/catalog.js';
 import { createMembership,paidPrices } from './membership.js';
 import { roomInviteUrl } from './public/invite.js';
 
@@ -103,6 +103,7 @@ function profile(id) {
     if (palettes[appearance.palette]?.premium) appearance.palette = 'emerald';
     appearance.transparency = glassRange.defaultValue;
   }
+  if (equipped.title && equipped.frame) delete equipped.frame;
   return { ...player, streak, inventory, equipped, plan, cosmetics, appearance, now:clock.now(),
     admin:admins.has(id), adminAccess:adminAccess(id), prices:billingEnabled && !id.startsWith('guest:') ? paidPrices : {},
     referralBonus:query('SELECT count(*) AS referrals FROM referrals WHERE rewarded_room IS NOT NULL AND (inviter=? OR invitee=?)',id,id).referrals*referralPoints,
@@ -167,6 +168,7 @@ function finish(room, leaving) {
   });
   room.phase = 'outcome';
   room.finished = now;
+  if (!leaving) room.breakUntil = now+breakMinutes[room.minutes]*minute;
   for (const player of new Set([...room.members.map(p=>p.id),...rewarded])) io.to('player:'+player).emit('profile',profile(player));
   send(room);
 }
@@ -529,17 +531,22 @@ io.on('connection', (socket) => {
     room.pauseRequest = null;
     send(room);
   });
-  action('buy', ({item}) => {
+  action('buy', ({item,quantity=1}) => {
     if (!Object.hasOwn(items,item) || item==='marathon') fail('العنصر غير موجود.');
     const [category,,cost] = items[item];
     const { points,inventory,cosmetics } = profile(id);
     if ([1,2,4].includes(category) && isPaid(id)) fail('العنصر متاح لك ضمن العضوية.');
-    if (points < cost) fail('رصيدك لا يكفي لهذا العنصر.');
+    const total = cost*quantity;
+    const stackable = category===0 || category===3;
+    if (!Number.isSafeInteger(quantity) || quantity<1 || (!stackable && quantity!==1) || !Number.isSafeInteger(total)) fail('الكمية غير صالحة.');
+    if (points < total) fail('رصيدك لا يكفي لهذا العنصر.');
     if (([1,4].includes(category) && inventory[item]) || (category === 2 && cosmetics[item])) fail('هذا العنصر موجود في مخزونك.');
-    inventory[item] = category === 2 ? 1 : (inventory[item] || 0)+1;
+    const nextCount = category===2 ? 1 : (inventory[item] || 0)+quantity;
+    if (!Number.isSafeInteger(nextCount)) fail('الكمية غير صالحة.');
+    inventory[item] = nextCount;
     transaction(() => {
       if (category === 2) membership.grantCosmetic(id,item);
-      run('UPDATE players SET points=points-?,inventory=? WHERE id=?',cost,JSON.stringify(inventory),id);
+      run('UPDATE players SET points=points-?,inventory=? WHERE id=?',total,JSON.stringify(inventory),id);
     });
     syncProfile();
   });
@@ -550,7 +557,11 @@ io.on('connection', (socket) => {
     if (!isPaid(id) && !(category === 2 ? cosmetics[item] : inventory[item])) fail('العنصر غير متاح.');
     const equipped = JSON.parse(query('SELECT equipped FROM players WHERE id=?',id).equipped);
     const slot = category === 4 ? 'decoration' : category === 1 ? 'theme' : item === 'frame' ? 'frame' : 'title';
-    equipped[slot]=equipped[slot]===item ? null : item;
+    if (equipped[slot]===item) equipped[slot]=null;
+    else {
+      if (category===2) delete equipped[slot==='title'?'frame':'title'];
+      equipped[slot]=item;
+    }
     run('UPDATE players SET equipped=? WHERE id=?',JSON.stringify(equipped),id);
     syncProfile();
     if (current()) send(current());

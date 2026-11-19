@@ -95,6 +95,14 @@ test('runs Telegram invitations, admin changes, custom appearance, and referral 
   await command(recipient,'ready');
   const [started] = await active;
   assert.equal(started.phase,'active');
+  const finished = new Promise(resolve=>{
+    function onRoom(next) {
+      if (next.phase!=='outcome') return;
+      host.off('room',onRoom);
+      resolve(next);
+    }
+    host.on('room',onRoom);
+  });
   const hostReward = once(host,'profile');
   const recipientReward = once(recipient,'profile');
   clock.now = () => started.endAt+1;
@@ -104,6 +112,14 @@ test('runs Telegram invitations, admin changes, custom appearance, and referral 
   assert.equal(recipientResult.points,210);
   assert.equal(hostResult.referralBonus,100);
   assert.equal(recipientResult.referralBonus,100);
+  const outcome = await finished;
+  assert.equal(outcome.breakUntil-outcome.finished,5*60000);
+  assert.ok((await command(recipient,'buy',{item:'owl',quantity:2})).error);
+  const inventory = once(recipient,'profile');
+  assert.deepEqual(await command(recipient,'buy',{item:'horn',quantity:3}),{ok:true});
+  const [purchased] = await inventory;
+  assert.equal(purchased.inventory.horn,3);
+  assert.equal(purchased.points,105);
   clock.now = Date.now;
 
   const banned = once(recipient,'banned');

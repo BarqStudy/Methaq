@@ -493,3 +493,71 @@ body {padding-bottom:calc(88px + var(--dock-bottom))}
 .decoration-art i {width:43px;height:43px}
 .preview .decoration-art {inset-inline-end:8%;inset-block-end:22%;opacity:.60}
 .preview .decoration-art i {width:56px;height:56px}
+
+.dock {grid-template-columns:repeat(4,minmax(0,1fr));width:min(410px,calc(100% - 26px))}
+.break-card,.appearance-overview {display:flex;align-items:center;gap:11px;justify-content:space-between}
+.break-card h2,.appearance-overview h2,.specialty-title {font-weight:700;font-size:18px}
+.break-card>div {flex:1;min-width:0}
+.break-time {font-variant-numeric:tabular-nums;color:var(--accent);font-size:19px;text-align:center}
+.specialty-title {margin-top:18px}
+.section-rule {margin:8px 0 11px}
+.section-rule i {width:15px;height:15px;color:var(--accent)}
+.store-grid {grid-auto-rows:1fr}
+.store-item {
+  align-content:stretch;
+  grid-template-rows:auto auto 1fr auto auto;
+  min-height:278px;
+}
+.store-controls {display:grid;gap:5px;align-content:end}
+.buy-form {display:grid;gap:5px}
+.buy-form label {display:flex;align-items:center;justify-content:space-between;gap:5px;font-size:12px}
+.buy-form input {
+  width:54px;
+  min-height:32px;
+  padding:3px 5px;
+  border:1px solid var(--line);
+  border-radius:9px;
+  color:var(--text);
+  background:var(--surface);
+}
+.purchase-choice {display:flex;align-items:center;gap:6px;font-size:14px}
+.purchase-choice input {accent-color:var(--accent);width:17px;height:17px}
+
+:root[data-specialty] body {
+  position:relative;
+  isolation:isolate;
+  background-image:
+    radial-gradient(ellipse at 13% 24%,color-mix(in srgb,var(--specialty-first) 22%,transparent),transparent 47%),
+    radial-gradient(ellipse at 89% 57%,color-mix(in srgb,var(--specialty-second) 27%,transparent),transparent 57%),
+    radial-gradient(ellipse at 60% 12%,color-mix(in srgb,var(--accent) 12%,transparent),transparent 45%);
+}
+:root[data-specialty] body::before {
+  content:"";
+  position:fixed;
+  pointer-events:none;
+  inset:0;
+  z-index:-1;
+  opacity:.23;
+  background-image:radial-gradient(circle,color-mix(in srgb,var(--specialty-first) 65%,var(--muted)) .8px,transparent 1.4px);
+  background-size:19px 19px;
+  mask-image:linear-gradient(120deg,#000,transparent 65%);
+}
+:root[data-specialty] .top,:root[data-specialty] .dock,:root[data-specialty] dialog {
+  background-image:linear-gradient(135deg,color-mix(in srgb,var(--specialty-first) 19%,var(--glass-fill)),var(--glass-fill) 52%,color-mix(in srgb,var(--specialty-second) 20%,var(--glass-fill)));
+}
+:root[data-specialty] .panel:not(.preview):not(.plan-card) {
+  background-image:linear-gradient(148deg,color-mix(in srgb,var(--specialty-first) 11%,var(--glass-fill)),var(--glass-fill) 49%,color-mix(in srgb,var(--specialty-second) 12%,var(--glass-fill)));
+}
+:root[data-specialty] .heading::before {
+  content:"";
+  display:block;
+  width:24px;
+  height:24px;
+  margin-bottom:8px;
+  background:color-mix(in srgb,var(--specialty-first) 56%,var(--text));
+  mask:var(--specialty-symbol) center/contain no-repeat;
+}
+@media (max-width:390px) {
+  .dock button {font-size:11px}
+  .store-item {min-height:295px}
+}

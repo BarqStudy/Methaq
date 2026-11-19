@@ -1,4 +1,4 @@
-import { items,sections,palettes,plans,rewards,successReward,storeArt,defaultAppearance,glassRange,durations,referralPoints } from './catalog.js';
+import { items,sections,palettes,plans,rewards,successReward,storeArt,defaultAppearance,glassRange,durations,referralPoints,specialties,breakMinutes } from './catalog.js';
 import { readRoomInvite,roomInviteUrl } from './invite.js';
 
 const telegramLaunch = /(?:^#|[&?])tgWebApp/.test(location.hash) || new URLSearchParams(location.search).has('tgWebAppStartParam')
@@ -45,6 +45,7 @@ let viewKey, noticeTimeout, revisited, lastActivity = 0, lastCheck, audio, ambie
 let preparingInvite = false, incomingInvite;
 let appearanceOpen = false, checkoutOpen = false, expiryTimer, glassPreview, glassRequest = 0;
 const isPaid = () => ['pro','special'].includes(profile?.plan?.tier);
+let purchaseBusy = false;
 let adminData, adminSearch = '', adminBusy = false, blocked = false;
 const guestId = sessionStorage.getItem('methaq-guest') || Array.from(crypto.getRandomValues(new Uint8Array(18)), b=>b.toString(16).padStart(2,'0')).join('');
 sessionStorage.setItem('methaq-guest',guestId);
@@ -178,7 +179,11 @@ function outcome() {
   ${succeeded ? `<p class="bodycopy">${result.reward===successReward ? num(rewards.achievement)+' نقطة إنجاز + '+num(rewards.cooperation)+' نقطة تعاون · ' : ''}سلسلة الالتزام ${num(profile.streak)} يوم</p><h2>هل أنجزت هدفك؟</h2><div class="actions">${button('result','نعم',result.goal_done===1?'primary':'secondary','','yes')}${button('result','ليس بعد',result.goal_done===0?'primary':'secondary','','no')}</div>
   ${button('shareCard','مشاركة بطاقة الإنجاز','primary','share-2')}${profile.inventory.horn?button('signal','بوق الفوز','secondary','megaphone','horn'):''}` : ''}
   ${left && profile.inventory.shield && result.old_streak && !profile.streak ? button('protect','استخدام درع الحماية','secondary','shield','shield'):''}
-  </section>${button('reset','جلسة جديدة','secondary','plus')}</div></div>`;
+  </section>
+  ${succeeded && room.breakUntil ? `<section class="panel break-card">
+    <span class="tile-icon">${icon('timer-reset')}</span><div><h2>استراحة بعد التركيز</h2><p class="bodycopy">${num(breakMinutes[room.minutes])} دقيقة قبل جلستك التالية</p></div>
+    <strong class="break-time" id="break-time" dir="ltr"></strong></section>`:''}
+  ${button('reset','جلسة جديدة','secondary','plus')}</div></div>`;
 }
 function stats() {
   const p = profile || {};
@@ -214,7 +219,21 @@ function store() {
     <button class="secondary">${icon('ticket-check')} فعّل الكود</button>
   </form>
   <div class="filters">${sections.map((x,i)=>button('filter',x,i===category?'selected':'','',i)).join('')}</div>
-  <div class="store-grid">${Object.entries(items).filter(([key,x])=>key!=='marathon' && x[0]===category).map(([key,[group,label,cost,symbol,desc]])=>{
+  ${shopItems(category)}</div>`;
+}
+function themes() {
+  const current = specialties[profile?.equipped?.decoration];
+  return `<div class="inner store-page">${heading('الثيمات','غيّر لون المنصة ووضع العرض، واختر ثيم تخصصك.')}
+  <section class="panel appearance-overview"><div><h2>الألوان ووضع العرض</h2>
+    <p class="bodycopy">${profile?.appearance?.mode==='dark'?'ليلي':'نهاري'} · ${palettes[profile?.appearance?.palette || 'emerald'].label}</p></div>
+    ${button('appearanceMenu','تعديل المظهر','secondary','palette')}</section>
+  <h2 class="specialty-title">ثيمات التخصصات</h2>${current?'<p class="bodycopy">الثيم المفعّل · '+current[0]+'</p>':''}
+  ${shopItems(4)}</div>`;
+}
+function shopItems(groupIndex) {
+  const p = profile;
+  return `<p class="bodycopy section-rule">${icon('layers')} ${[1,2,4].includes(groupIndex)?'في هذا القسم يُفعّل منتج واحد فقط.':'في هذا القسم يُستخدم منتج واحد في كل مرة.'}</p>
+    <div class="store-grid">${Object.entries(items).filter(([key,x])=>key!=='marathon' && x[0]===groupIndex).map(([key,[group,label,cost,symbol,desc]])=>{
     const count = p?.inventory[key] || 0;
     const expires = p?.cosmetics?.[key];
     const collectible = [1,2,4].includes(group);
@@ -225,10 +244,53 @@ function store() {
     return `<article class="panel store-item">
       <div class="store-art art-${key}" style="--art:${storeArt[key]}"><span aria-hidden="true" class="art-orbit"></span>${icon(symbol)}${icon('sparkles')}</div>
       <h3>${label}</h3><p class="bodycopy">${desc}</p><span class="gold">${detail}</span>
-      ${available?button('equip',equipped?'إلغاء التفعيل':'تفعيل',equipped?'primary':'secondary','',key):button('buy','شراء','secondary','',key)}
-      ${key==='eraser'&&count?button('protect','استخدام','plain','',key):''}</article>`;
-  }).join('')}</div></div>`;
+      <div class="store-controls">${available?button('equip',equipped?'إلغاء التفعيل':'تفعيل',equipped?'primary':'secondary','',key):`
+        <form class="buy-form" data-item="${key}">
+          ${!collectible?'<label>الكمية <input name="quantity" type="number" min="1" step="1" value="1" required inputmode="numeric"></label>':''}
+          <button class="secondary" aria-label="شراء ${label}">${icon('shopping-cart')} شراء</button>
+        </form>`}
+      ${key==='eraser'&&count?button('protect','استخدام','plain','',key):''}</div></article>`;
+  }).join('')}</div>`;
 }
+
+function purchasePreference() {
+  return 'methaq.purchase-confirmation.'+(user?.id || guestId);
+}
+function purchasePrompt(item, quantity) {
+  if (purchaseBusy) return;
+  const [,label,price] = items[item];
+  if (Number(localStorage.getItem(purchasePreference())) > Date.now()) return purchase(item,quantity);
+  dialog.innerHTML = `<form id="confirm-purchase-form" class="stack" data-item="${item}" data-quantity="${quantity}">
+    <span class="tile-icon">${icon('shopping-cart')}</span><h2>متأكد من الشراء؟</h2>
+    <p class="bodycopy">${label} × ${num(quantity)} · الإجمالي ${num(quantity*price)} نقطة</p>
+    <label class="purchase-choice"><input name="skip" type="checkbox"> لا تظهر التأكيد لمدة أسبوع</label>
+    <div class="actions"><button class="primary">تأكيد الشراء</button>${button('close','إلغاء','secondary')}</div>
+  </form>`;
+  if (!dialog.open) dialog.showModal();
+}
+async function purchase(item, quantity, skip=false) {
+  if (purchaseBusy) return;
+  if (!socket?.connected) return toast('الاتصال غير متاح حاليًا.');
+  purchaseBusy = true;
+  try {
+    const result = await socket.timeout(5000).emitWithAck('buy',{item,quantity});
+    if (result.error) throw new Error(result.error);
+    if (skip) localStorage.setItem(purchasePreference(),Date.now()+7*86400000);
+    toast('تم الشراء وتحديث مخزونك.');
+  } catch (error) {
+    toast(error.message || 'تعذّر إتمام الشراء.');
+  } finally {
+    purchaseBusy=false;
+  }
+}
+dialog.addEventListener('submit',event=>{
+  const form = event.target;
+  if (form.id!=='confirm-purchase-form') return;
+  event.preventDefault();
+  const skip = new FormData(form).has('skip');
+  dialog.close();
+  purchase(form.dataset.item, Number(form.dataset.quantity),skip);
+});
 
 function adminPage() {
   if (!profile?.admin) return '';
@@ -390,6 +452,15 @@ function applyAppearance() {
   const {mode,palette} = profile?.appearance || defaultAppearance;
   document.documentElement.dataset.mode = mode;
   document.documentElement.dataset.palette = palette;
+  const specialty = profile?.equipped?.decoration;
+  const theme = specialties[specialty];
+  if (theme) {
+    const [,symbol,first,second] = theme;
+    document.documentElement.dataset.specialty = specialty;
+    document.documentElement.style.setProperty('--specialty-first',first);
+    document.documentElement.style.setProperty('--specialty-second',second);
+    document.documentElement.style.setProperty('--specialty-symbol','url(/icons/'+symbol+'.svg)');
+  } else delete document.documentElement.dataset.specialty;
   const custom = profile?.appearance?.custom;
   if (palette==='custom' && custom) {
     document.documentElement.style.setProperty('--custom-color',custom.first);
@@ -444,7 +515,7 @@ function render(force=false) {
   const phase = !revisited && room?.phase;
   const key = [tab,phase,room?.id,isInvite()].join('|');
   if (force || key!==viewKey || ['active','lobby','outcome'].includes(phase)) {
-    const content = blocked ? '<div class="inner">'+heading('الحساب محظور','تواصل مع مشرف ميثاق للمساعدة.')+'</div>' : tab==='admin'?adminPage():tab==='stats'?stats():tab==='store'?store():phase==='lobby'?lobby():phase==='active'?active():phase==='outcome'?outcome():home();
+    const content = blocked ? '<div class="inner">'+heading('الحساب محظور','تواصل مع مشرف ميثاق للمساعدة.')+'</div>' : tab==='admin'?adminPage():tab==='stats'?stats():tab==='store'?store():tab==='themes'?themes():phase==='lobby'?lobby():phase==='active'?active():phase==='outcome'?outcome():home();
     if (page.dataset.content !== content) {
       const previous = document.activeElement;
       const selector = previous?.dataset.action && '[data-action="'+previous.dataset.action+'"][data-value="'+previous.dataset.value+'"]';
@@ -464,7 +535,15 @@ function render(force=false) {
   }
   updateClock();
 }
+function formatClock(seconds) {
+  return [Math.floor(seconds/60),seconds%60].map(value=>String(value).padStart(2,'0')).join(':');
+}
 function updateClock() {
+  const rest = document.querySelector('#break-time');
+  if (rest && room?.breakUntil) {
+    const seconds = Math.max(0,Math.ceil((room.breakUntil-serverNow())/1000));
+    rest.textContent = seconds>0 ? formatClock(seconds) : 'انتهت الاستراحة';
+  }
   const digits = document.querySelector('#digits');
   if (!digits || tab!=='home' || room?.phase!=='active') return;
   const now = serverNow();
@@ -472,7 +551,7 @@ function updateClock() {
   const paused = now < room.pauseUntil;
   const remaining = Math.max(0,(counting?room.startsAt:paused?room.pauseUntil:room.endAt)-now);
   const value = Math.ceil(remaining/1000);
-  digits.textContent = counting ? String(value) : [Math.floor(value/60),value%60].map(n=>String(n).padStart(2,'0')).join(':');
+  digits.textContent = counting ? String(value) : formatClock(value);
   document.querySelector('#dial-label').textContent = counting?'تبدأ الجلسة خلال':paused?'وقت الاستراحة':'الوقت المتبقي';
   const focusRemaining = counting ? room.endAt-room.startsAt : room.endAt-(paused ? room.pauseUntil : now);
   digits.closest('.dial').style.setProperty('--progress',dialProgress(focusRemaining/60000));
@@ -661,6 +740,11 @@ page.addEventListener('input',event=>{
 });
 page.addEventListener('submit',event=>{
   const formElement = event.target;
+  if (formElement.classList.contains('buy-form')) {
+    event.preventDefault();
+    purchasePrompt(formElement.dataset.item,Number(new FormData(formElement).get('quantity') || 1));
+    return;
+  }
   if (formElement.id==='redeem-code-form') {
     event.preventDefault();
     emit('redeemCode',{code:new FormData(formElement).get('code')});

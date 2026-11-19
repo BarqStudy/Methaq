@@ -1,4 +1,21 @@
 export const sections = ['الحماية والوقت','الأجواء والثيمات','الألقاب والشارات','التفاعلات','ثيمات تزيينية'];
+export const specialties = {
+  medic: ['الطب','stethoscope','#48c7b8','#91d5e9'],
+  engineer: ['الهندسة','drafting-compass','#eeb36f','#c998ef'],
+  artist: ['الفنون','palette','#c5a3ff','#f5a2cc'],
+  coder: ['البرمجة','terminal','#87aefa','#70d8c4'],
+  pharmacy: ['الصيدلة','pill','#87d897','#c6d87b'],
+  dentistry: ['طب الأسنان','smile','#8eddec','#adacfa'],
+  nursing: ['التمريض','heart-pulse','#f89caa','#ffc482'],
+  law: ['القانون','scale','#d6a778','#a8a9d7'],
+  business: ['إدارة الأعمال','briefcase','#87b9fb','#af9af4'],
+  architecture: ['العمارة','building-2','#edb29a','#e1c17a'],
+  education: ['التربية','book-open','#bfa2ff','#8eceef'],
+  psychology: ['علم النفس','brain','#efa7d2','#c2a3fd'],
+  chemistry: ['الكيمياء','flask-conical','#8bd7c8','#9aaeff'],
+  languages: ['اللغات','languages','#ffc48c','#f399b6'],
+  accounting: ['المحاسبة','calculator','#a4d18b','#e8cf83']
+};
 export const items = {
   shield: [0,'درع الطوارئ',100,'shield','يحمي سلسلة التزامك عند الانسحاب أو انقطاع الاتصال.'],
   marathon: [0,'تذكرة الماراثون',120,'ticket','تفتح جلسة واحدة مدتها ١٢٠ دقيقة.'],
@@ -15,10 +32,8 @@ export const items = {
   zap: [3,'صعقة التركيز',30,'zap','إشارة اهتزاز إضافية خلال الجلسة.'],
   horn: [3,'بوق الفوز',35,'megaphone','احتفل مع شريكك بعد النجاح.'],
   coffee: [3,'كوب قهوة',40,'coffee','أرسل بطاقة قهوة لشريكك أثناء الجلسة.'],
-  medic: [4,'الطب',95,'stethoscope','زخرفة سماعة طبية ولمسات فيروزية حول حسابك والمؤقت.'],
-  engineer: [4,'الهندسة',95,'drafting-compass','زخرفة هندسية بلون نحاسي حول حسابك والمؤقت.'],
-  artist: [4,'الفنون',95,'palette','زخرفة فنية بدرجات بنفسجية حول حسابك والمؤقت.'],
-  coder: [4,'البرمجة',95,'terminal','زخرفة برمجية بلمسات زرقاء حول حسابك والمؤقت.']
+  ...Object.fromEntries(Object.entries(specialties).map(([id,[name,icon]]) =>
+    [id,[4,name,95,icon,'أجواء '+name+' وزخارفه على كامل المنصة.']]))
 };
 
 export const rewards = { achievement:45, cooperation:15, steadfast:25, withdrawal:20 };
@@ -44,7 +59,7 @@ export const storeArt = {
   rain:'#80bfff', cafe:'#f2be87', forest:'#91db9c', fire:'#ff976f',
   scholar:'#a6a5ff', owl:'#b5a1eb', steadfast:'#f9bf70', frame:'#f8d080',
   zap:'#f6dc65', horn:'#ef91b9', coffee:'#dfae8d',
-  medic:'#48c7b8', engineer:'#eeb36f', artist:'#c5a3ff', coder:'#87aefa'
+  ...Object.fromEntries(Object.entries(specialties).map(([id,[,,color]])=>[id,color]))
 };
 
 export const plans = {
@@ -54,3 +69,5 @@ export const plans = {
 
 export const durations = [25,50,90,120,180];
 export const referralPoints = 100;
+
+export const breakMinutes = {25:5, 50:10, 90:12, 120:15, 180:20};
