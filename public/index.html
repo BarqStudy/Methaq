@@ -12,18 +12,16 @@
 </head>
 <body>
   <header class="top"><div class="shell top-inner">
-    <a class="brand" href="/" aria-label="ميثاق التركيز"><span class="logo"><i data-icon="lock-keyhole"></i></span><span>ميثاق التركيز<small>LOCK-IN DUO</small></span></a>
-    <div class="header-tools"><div class="account" id="account"></div><button type="button" class="appearance-toggle" id="appearance-toggle" data-action="appearanceMenu" aria-haspopup="dialog"></button></div>
+    <div class="brand"><span class="logo"><i data-icon="lock-keyhole" aria-hidden="true"></i></span><span>ميثاق التركيز<small>LOCK-IN DUO</small></span></div>
+    <div class="account" id="account"></div>
+    <button type="button" class="appearance-toggle" id="appearance-toggle" data-action="appearanceMenu" aria-label="مظهر المنصة" aria-haspopup="dialog"></button>
   </div></header>
   <main class="shell" id="page"></main>
-  <footer class="shell footer">
-    <span><i data-icon="lock-keyhole"></i> ميثاق التركيز <b>·</b> مساحة للإنجاز معًا</span>
-    <nav aria-label="التنقل الرئيسي">
-      <button data-tab="home" class="selected"><i data-icon="house"></i>الرئيسية</button>
-      <button data-tab="stats"><i data-icon="chart-no-axes-column"></i>الإحصائيات</button>
-      <button data-tab="store"><i data-icon="shopping-bag"></i>المتجر</button>
-    </nav>
-  </footer>
+  <nav class="dock" aria-label="التنقل الرئيسي">
+    <button type="button" data-tab="home" aria-current="page"><i data-icon="house" aria-hidden="true"></i><span>الرئيسية</span></button>
+    <button type="button" data-tab="stats"><i data-icon="chart-no-axes-column" aria-hidden="true"></i><span>الإحصائيات</span></button>
+    <button type="button" data-tab="store"><i data-icon="shopping-bag" aria-hidden="true"></i><span>المتجر</span></button>
+  </nav>
   <div id="notice" role="status" aria-live="polite"></div>
   <dialog id="dialog"></dialog>
 </body>

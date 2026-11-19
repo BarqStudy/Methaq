@@ -15,7 +15,14 @@ const tg = window.Telegram?.WebApp;
 tg?.ready();
 if (tg?.initData) {
   tg.expand();
-  const inset = () => document.documentElement.style.setProperty('--tg-top', (tg.contentSafeAreaInset?.top || 0)+'px');
+  const inset = () => {
+    for (const edge of ['top','bottom']) {
+      const system = tg.safeAreaInset?.[edge] || 0;
+      const content = tg.contentSafeAreaInset?.[edge] || 0;
+      document.documentElement.style.setProperty('--tg-'+edge,Math.max(system,content)+'px');
+    }
+  };
+  tg.onEvent('safeAreaChanged',inset);
   tg.onEvent('contentSafeAreaChanged',inset);
   inset();
 }
@@ -67,9 +74,11 @@ function account() {
   const p = profile || {reliability:100};
   const accountElement = document.querySelector('#account');
   const content = `<div class="identity">${avatar({...user,equipped:p.equipped})}<span>${esc(user?.name || 'ضيف ميثاق')}<small>${items[p.equipped?.title]?.[1] || 'رفيق تركيز'}</small></span></div>
-  <span class="metric" aria-label="أيام السلسلة">${icon('flame').replace('<i ','<i class="gold" ')} ${num(p.streak)}</span>
-  <span class="metric" aria-label="نسبة الالتزام"><span class="mint">${icon('shield-check')}</span>${num(p.reliability)}٪</span>
-  <span class="metric gold" aria-label="رصيد النقاط">${icon('sparkles')} ${num(p.points)}</span>`;
+  <div class="metrics" role="group" aria-label="ملخص حسابك">
+    <span class="metric"><span class="metric-icon gold">${icon('flame')}</span><span>السلسلة <strong>${num(p.streak)}</strong><span class="sr-only"> أيام</span></span></span>
+    <span class="metric"><span class="metric-icon mint">${icon('shield-check')}</span><span>الالتزام <strong>${num(p.reliability)}٪</strong></span></span>
+    <span class="metric"><span class="metric-icon gold">${icon('sparkles')}</span><span>النقاط <strong>${num(p.points)}</strong></span></span>
+  </div>`;
   if (accountElement.dataset.content !== content) {
     accountElement.innerHTML = content;
     accountElement.dataset.content = content;
@@ -283,7 +292,8 @@ function render(force=false) {
   account();
   applyAppearance();
   document.querySelectorAll('[data-tab]').forEach(b => {
-    b.classList.toggle('selected',b.dataset.tab===tab);
+    if (room?.phase==='active' && b.dataset.tab!=='home') b.setAttribute('aria-disabled','true');
+    else b.removeAttribute('aria-disabled');
     if (b.dataset.tab===tab) b.setAttribute('aria-current','page'); else b.removeAttribute('aria-current');
   });
   const phase = !revisited && room?.phase;
@@ -435,8 +445,11 @@ document.addEventListener('click',event=>{
   const nav = event.target.closest('[data-tab]');
   if (nav) {
     if (room?.phase==='active' && nav.dataset.tab!=='home') return toast('التنقل متاح بعد انتهاء جلسة التركيز.');
-    tab=nav.dataset.tab;
-    render();
+    if (tab!==nav.dataset.tab) {
+      tab=nav.dataset.tab;
+      render();
+      window.scrollTo({top:0,behavior:'instant'});
+    }
     return;
   }
   const b = event.target.closest('[data-action]');
