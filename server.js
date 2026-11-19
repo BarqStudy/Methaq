@@ -6,7 +6,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { Server } from 'socket.io';
 import { Telegraf, Markup } from 'telegraf';
-import { items,glassRange,palettes,plans,rewards,successReward } from './public/catalog.js';
+import { items,glassRange,palettes,plans,rewards,successReward,durations } from './public/catalog.js';
 import { createMembership,paidPrices } from './membership.js';
 import { roomInviteUrl } from './public/invite.js';
 
@@ -86,7 +86,7 @@ function authenticate(auth = {}) {
     const age = clock.now()/1000 - Number(params.get('auth_date'));
     if (hash.length !== expected.length || !timingSafeEqual(hash, expected) || !Number.isFinite(age) || age > 86400 || age < -60) fail('تعذّر التحقق من حساب تليجرام.');
     const user = JSON.parse(params.get('user'));
-    return { id: String(user.id), name: [user.first_name,user.last_name].filter(Boolean).join(' '), photo: user.photo_url };
+    return { id: String(user.id), name: [user.first_name,user.last_name].filter(Boolean).join(' '), photo:user.photo_url, handle:user.username?.toLowerCase() };
   }
   if (dev && typeof auth.guest === 'string' && /^[a-f0-9-]{36}$/.test(auth.guest)) {
     return { id: 'guest:'+auth.guest, name: String(auth.name || 'ضيف ميثاق').trim().slice(0,32) || 'ضيف ميثاق' };
@@ -253,7 +253,7 @@ io.on('connection', (socket) => {
     const old = current();
     if (old && old.phase !== 'outcome') fail('أكمل غرفتك الحالية أولًا.');
     if (old) io.in(playerRoom).socketsLeave(old.id);
-    room.members.push({ ...user, goal, ready:false, activity:clock.now() });
+    room.members.push({ id, name:user.name, photo:user.photo, goal, ready:false, activity:clock.now() });
     memberships.set(id,room.id);
     io.in(playerRoom).socketsJoin(room.id);
     send(room);
@@ -264,17 +264,38 @@ io.on('connection', (socket) => {
     return goal;
   };
   action('create', ({ minutes, goal, pact }) => {
-    if (![25,50,90,120].includes(minutes)) fail('اختر مدة صالحة.');
+    if (!durations.includes(minutes)) fail('اختر مدة صالحة.');
+    if (minutes === 180 && !isPaid(id)) fail('جلسة ١٨٠ دقيقة متاحة للمشتركين فقط.');
     if (minutes === 120 && !isPaid(id) && !profile(id).inventory.marathon) fail('تحتاج إلى تذكرة الماراثون.');
-    const room = { id:randomUUID().replaceAll('-',''), phase:'lobby', created:clock.now(),
+    let roomId;
+    do { roomId = randomUUID().replaceAll('-',''); }
+    while ([...rooms.values()].some(room=>room.code===roomId.slice(0,10).toUpperCase()));
+    const room = { id:roomId, code:roomId.slice(0,10).toUpperCase(), phase:'lobby', created:clock.now(),
       minutes, pact:String(pact || '').trim().slice(0,160), members:[] };
     enter(room,goalText(goal));
     rooms.set(room.id,room);
   });
   action('join', ({ code, goal }) => {
-    const room = rooms.get(code);
+    const normalized = typeof code==='string' ? code.trim().toUpperCase() : '';
+    const room = rooms.get(normalized.toLowerCase()) || (/^[A-F0-9]{10}$/.test(normalized)
+      ? [...rooms.values()].find(room=>room.code===normalized) : null);
     if (!room || room.phase !== 'lobby' || room.members.length >= 2) fail('الغرفة ممتلئة أو انتهت صلاحية الدعوة.');
     enter(room,goalText(goal));
+  });
+  let nextDirectInvite = 0;
+  action('directInvite', ({handle}) => {
+    const room = current();
+    if (room?.phase!=='lobby' || room.members.length!==1) fail('الدعوة متاحة عندما تكون الغرفة بانتظار شريك.');
+    const target = typeof handle==='string' ? handle.trim().replace(/^@/,'').toLowerCase() : '';
+    if (!/^[a-z0-9_]{5,32}$/.test(target)) fail('اكتب اسم مستخدم تليجرام.');
+    if (clock.now() < nextDirectInvite) fail('انتظر قليلًا قبل إرسال دعوة أخرى.');
+    nextDirectInvite = clock.now()+5000;
+    const recipient = [...io.sockets.sockets.values()].find(candidate=>
+      candidate.data.user.handle===target && candidate.data.user.id!==id);
+    if (!recipient) fail('خلي شريكك يفتح ميثاق أولًا أو أرسل له الرابط.');
+    const recipientRoom = rooms.get(memberships.get(recipient.data.user.id));
+    if (recipientRoom && recipientRoom.phase!=='outcome') fail('شريكك موجود في غرفة أخرى.');
+    io.to('player:'+recipient.data.user.id).emit('directInvite',{code:room.id, name:user.name, minutes:room.minutes});
   });
   action('leaveLobby', () => {
     const room = current();
@@ -303,6 +324,7 @@ io.on('connection', (socket) => {
     if (starting && room.members.some(member => !io.sockets.adapter.rooms.get('player:'+member.id)?.size)) {
       fail('بانتظار عودة شريكك للاتصال.');
     }
+    if (starting && room.minutes === 180 && !isPaid(room.members[0].id)) fail('تحتاج إلى عضوية فعّالة لبدء ١٨٠ دقيقة.');
     if (starting && room.minutes === 120) {
       const host = room.members[0].id;
       if (!isPaid(host)) use(host,'marathon');

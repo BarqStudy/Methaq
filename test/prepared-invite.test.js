@@ -21,7 +21,7 @@ test('prepares a Telegram message whose join button opens the waiting room', {ti
   async function connect(id) {
     const params = new URLSearchParams({
       auth_date:String(Math.floor(Date.now()/1000)),
-      user:JSON.stringify({id,first_name:'طالب'})
+      user:JSON.stringify({id,first_name:'طالب',username:'student_'+id})
     });
     const key = createHmac('sha256','WebAppData').update(process.env.BOT_TOKEN).digest();
     params.set('hash',createHmac('sha256',key).update([...params].map(([k,v])=>k+'='+v).join('\n')).digest('hex'));
@@ -37,6 +37,9 @@ test('prepares a Telegram message whose join button opens the waiting room', {ti
   const created = once(host,'room');
   assert.deepEqual(await command(host,'create',{minutes:25,goal:'مراجعة الدرس'}),{ok:true});
   const [room] = await created;
+  const direct = once(recipient,'directInvite');
+  assert.deepEqual(await command(host,'directInvite',{handle:'@student_102'}),{ok:true});
+  assert.equal((await direct)[0].code,room.id);
   assert.deepEqual(await command(host,'prepareInvite'),{messageId:'prepared-test-message'});
   assert.equal(api.mock.callCount(),1);
   const [method,payload] = api.mock.calls[0].arguments;
@@ -48,7 +51,7 @@ test('prepares a Telegram message whose join button opens the waiting room', {ti
   assert.equal(button.url,'https://t.me/MethaqTestBot?startapp='+room.id);
 
   const joined = once(recipient,'room');
-  assert.deepEqual(await command(recipient,'join',{code:new URL(button.url).searchParams.get('startapp'),goal:'القراءة'}),{ok:true});
+  assert.deepEqual(await command(recipient,'join',{code:room.code.toLowerCase(),goal:'القراءة'}),{ok:true});
   assert.equal((await joined)[0].members.length,2);
   assert.ok((await command(host,'prepareInvite')).error);
 });

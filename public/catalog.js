@@ -29,7 +29,9 @@ export const palettes = {
   violet: { label:'بنفسجي', swatch:'#b59aff', premium:true },
   amber: { label:'كهرماني', swatch:'#f2b46f', premium:true },
   aurora: { label:'تدرّج الشفق', swatch:'linear-gradient(135deg,#8fe9cf,#9f9af9)', premium:true },
-  dusk: { label:'تدرّج الغروب', swatch:'linear-gradient(135deg,#ffc888,#df99d9)', premium:true }
+  dusk: { label:'تدرّج الغروب', swatch:'linear-gradient(135deg,#ffc888,#df99d9)', premium:true },
+  ocean: { label:'محيط زجاجي', swatch:'linear-gradient(135deg,#9bf3e3,#7bafff)', premium:true },
+  rose: { label:'ورد زجاجي', swatch:'linear-gradient(135deg,#ffc2d7,#ceadff)', premium:true }
 };
 
 export const storeArt = {
@@ -42,4 +44,11 @@ export const storeArt = {
 export const plans = {
   pro: { title:'برو', duration:'٣٠ يومًا', icon:'crown', color:'#b8a0ff' },
   special: { title:'سبيشل', duration:'مدى الحياة', icon:'gem', color:'#f4c57c' }
+};
+
+export const durations = [25,50,90,120,180];
+export const sessionTemplates = {
+  review: { label:'مراجعة سريعة', minutes:25, icon:'book-open', goal:'أراجع أهم الأفكار وأختبر نفسي بأسئلة قصيرة.' },
+  study: { label:'مذاكرة عميقة', minutes:90, icon:'graduation-cap', goal:'أذاكر الفصل وألخّص النقاط التي أحتاج مراجعتها.' },
+  project: { label:'ماراثون مشروع', minutes:180, icon:'rocket', goal:'أنجز الجزء التالي من مشروعي وأراجع النتيجة.' }
 };

@@ -1,4 +1,4 @@
-import { items,sections,palettes,plans,rewards,successReward,storeArt,defaultAppearance,glassRange } from './catalog.js';
+import { items,sections,palettes,plans,rewards,successReward,storeArt,defaultAppearance,glassRange,durations,sessionTemplates } from './catalog.js';
 import { readRoomInvite,roomInviteUrl } from './invite.js';
 
 const telegramLaunch = /(?:^#|[&?])tgWebApp/.test(location.hash) || new URLSearchParams(location.search).has('tgWebAppStartParam')
@@ -35,14 +35,14 @@ dialog.addEventListener('close',()=>{
   applyGlass();
 });
 dialog.addEventListener('cancel',event=>{ if (dialog.querySelector('#check-deadline')) event.preventDefault(); });
-const invite = readRoomInvite({ startParam:tg?.initDataUnsafe?.start_param, hash:location.hash, search:location.search });
+let invite = readRoomInvite({ startParam:tg?.initDataUnsafe?.start_param, hash:location.hash, search:location.search });
 const icon = (name) => '<i aria-hidden="true" data-icon="'+name+'" style="--icon:url(/icons/'+name+'.svg)"></i>';
 document.querySelectorAll('i[data-icon]').forEach(i => i.style.setProperty('--icon','url(/icons/'+i.dataset.icon+'.svg)'));
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num = (v) => Number(v || 0).toLocaleString('ar',{numberingSystem:'arab'});
 let room, socket, user, profile, bot, shortName, clockOffset = 0, chosen = 25, tab = 'home', category = 0, goal = '', pact = '', inviteDismissed = false;
 let viewKey, noticeTimeout, revisited, lastActivity = 0, lastCheck, audio, ambience;
-let preparingInvite = false;
+let preparingInvite = false, incomingInvite;
 let appearanceOpen = false, checkoutOpen = false, expiryTimer, glassPreview, glassRequest = 0;
 const isPaid = () => ['pro','special'].includes(profile?.plan?.tier);
 const marathonAvailable = () => isPaid() || profile?.inventory?.marathon;
@@ -61,6 +61,7 @@ function emit(event,payload={}) {
     if (error || response?.error) toast(response?.error || 'تعذر الاتصال بالخادم.');
     else if (['buy','equip','protect'].includes(event)) toast('تم تحديث مخزونك.');
     else if (event==='appearance') toast('تم حفظ المظهر.');
+    else if (event==='directInvite') toast('أُرسلت الدعوة داخل ميثاق.');
   });
 }
 function avatar(person) {
@@ -73,12 +74,8 @@ function avatar(person) {
 function account() {
   const p = profile || {reliability:100};
   const accountElement = document.querySelector('#account');
-  const content = `<div class="identity">${avatar({...user,equipped:p.equipped})}<span>${esc(user?.name || 'ضيف ميثاق')}<small>${items[p.equipped?.title]?.[1] || 'رفيق تركيز'}</small></span></div>
-  <div class="metrics" role="group" aria-label="ملخص حسابك">
-    <span class="metric"><span class="metric-icon gold">${icon('flame')}</span><span>السلسلة <strong>${num(p.streak)}</strong><span class="sr-only"> أيام</span></span></span>
-    <span class="metric"><span class="metric-icon mint">${icon('shield-check')}</span><span>الالتزام <strong>${num(p.reliability)}٪</strong></span></span>
-    <span class="metric"><span class="metric-icon gold">${icon('sparkles')}</span><span>النقاط <strong>${num(p.points)}</strong></span></span>
-  </div>`;
+  const content = `<span class="metric streak-stat"><span class="metric-icon">${icon('flame')}</span><span>السلسلة <strong>${num(p.streak)}</strong></span></span>
+    <span class="metric points-stat"><span class="metric-icon">${icon('sparkles')}</span><span>النقاط <strong>${num(p.points)}</strong></span></span>`;
   if (accountElement.dataset.content !== content) {
     accountElement.innerHTML = content;
     accountElement.dataset.content = content;
@@ -86,26 +83,45 @@ function account() {
 }
 const button = (action,label,type='secondary',symbol='',value='') => `<button type="button" class="${type}" data-action="${action}" data-value="${value}">${symbol ? icon(symbol):''}${label}</button>`;
 const heading = (title,caption='') => `<div class="heading"><h1>${title}</h1>${caption?'<p>'+caption+'</p>':''}</div>`;
-const isInvite = () => invite && !inviteDismissed && !room;
-function dial(text,label) {
-  return `<div class="orbit"><div class="dial"><div class="dial-content">${icon('lock-keyhole')}<strong class="digits" id="digits">${text}</strong><small id="dial-label">${label}</small></div></div>
+const isInvite = () => invite && !inviteDismissed && (!room || revisited);
+const durationAllowed = (minutes) => minutes===180 ? isPaid() : minutes!==120 || marathonAvailable();
+const dialProgress = (minutes) => minutes<=25 ? Math.max(0,minutes) : Math.min(100,25+(minutes-25)*75/155);
+function studentProfile() {
+  const equipped = profile?.equipped;
+  const tier = profile?.plan?.tier;
+  return `<section class="panel student-profile">
+    ${avatar({...user,equipped})}<div><strong>${esc(user?.name || 'ضيف ميثاق')}</strong>
+    <small>${items[equipped?.title]?.[1] || 'رفيق تركيز'}</small></div>
+    ${tier && tier!=='free' ? '<span class="tag">'+icon(plans[tier].icon)+' '+plans[tier].title+'</span>' : ''}</section>`;
+}
+function pendingInvite() {
+  if (!incomingInvite || isInvite()) return '';
+  return `<section class="panel direct-banner"><p><strong>${esc(incomingInvite.name)}</strong> يدعوك لجلسة ${num(incomingInvite.minutes)} دقيقة.</p>
+    <div class="actions">${button('acceptInvite','انضمام','primary','user-round-plus')}${button('dismissInvite','تجاهل','plain')}</div></section>`;
+}
+function dial(text,label,progress=0) {
+  return `<div class="orbit"><div class="dial" style="--progress:${progress}"><div class="dial-content">${icon('lock-keyhole')}<strong class="digits" id="digits">${text}</strong><small id="dial-label">${label}</small></div></div>
   <span class="satellite one">${icon('user-round')}</span><span class="satellite two">${icon('user-round')}</span></div>`;
 }
 function home() {
   const joining = isInvite();
   return `<div class="inner focus-home">
+    ${studentProfile()}
+    ${pendingInvite()}
     ${joining ? `<section class="intro"><h1>لديك دعوة للتركيز</h1><p>اكتب هدفك للانضمام إلى شريكك في غرفة التركيز.</p></section>` : `
     <section class="panel preview home-timer" aria-labelledby="focus-timer-title">
       <div class="preview-top"><h1 id="focus-timer-title">مؤقت التركيز</h1><span class="tag"><span class="dot"></span> جلسة ثنائية</span></div>
-      ${dial(chosen+':00','مدة الجلسة')}
+      ${dial(chosen+':00','مدة الجلسة',dialProgress(chosen))}
       <p class="preview-note">${icon('users')} يبدأ المؤقت بعد موافقة الطرفين</p>
     </section>
-    <div class="durations" role="group" aria-label="مدة الجلسة">${[25,50,90,120].map(m=>`<button type="button" class="duration ${m===chosen?'on':''}" data-action="duration" data-value="${m}" aria-pressed="${m===chosen}"><strong>${num(m)}</strong> دقيقة${m===120&&!marathonAvailable()?icon('lock-keyhole'):''}</button>`).join('')}</div>`}
+    <div class="durations" role="group" aria-label="مدة الجلسة">${durations.map(m=>`<button type="button" class="duration ${m===chosen?'on':''}" data-action="duration" data-value="${m}" aria-pressed="${m===chosen}"><strong>${num(m)}</strong> دقيقة${!durationAllowed(m)?icon('lock-keyhole'):''}</button>`).join('')}</div>`}
     <form class="panel form-main" id="session-form"><div class="panel-title"><span class="tile-icon">${icon('sliders-horizontal')}</span><div><h2>${joining?'انضم إلى الجلسة':'إعداد الجلسة'}</h2></div></div>
     <label class="field">هدف الجلسة<input required maxlength="160" name="goal" placeholder="ماذا ستنجز في هذه الجلسة؟" value="${esc(goal)}"></label>
     ${joining?'':`<label class="field">ميثاق تشجيعي <small class="optional">اختياري</small><input maxlength="160" name="pact" placeholder="مثال: نلخّص فصلًا بعد الجلسة" value="${esc(pact)}"></label>`}
-    <button class="primary wide">${icon(joining?'users':'plus')}${joining?'الانضمام إلى الغرفة':'إنشاء غرفة وادعُ شريكك'}</button>
+    <button class="primary wide">${icon(joining?'log-in':'circle-plus')}${joining?'الانضمام إلى الغرفة':'أنشئ غرفة وادعُ شريكك'}</button>
     ${joining?button('ignore','العودة للرئيسية','plain'):''}</form>
+    ${joining?'':`<form id="join-code-form" class="panel join-code"><label class="field">عندك رمز غرفة؟<input name="code" dir="ltr" maxlength="10" placeholder="رمز الغرفة" required></label><button class="secondary">${icon('log-in')} انضم بالرمز</button></form>
+    <section class="panel template-panel"><div class="actions"><h2>قوالب التركيز</h2>${!isPaid()?'<span class="tag">'+icon('lock-keyhole')+' للمشتركين</span>':''}</div><div class="template-grid">${Object.entries(sessionTemplates).map(([key,t])=>button('template',t.label,'secondary',t.icon,key)).join('')}</div></section>`}
     <div class="pact-bar"><span class="tile-icon">${icon('shield-check')}</span><div><strong>ميثاق الجلسة</strong><p>عند إتمام الجلسة، تمنح المنصة كل طرف ${num(rewards.achievement)} نقطة إنجاز و${num(rewards.cooperation)} نقطة تعاون.</p></div><span class="tag">${icon('sparkles')} مكافأة المنصة</span></div></div>`;
 }
 function person(p, active=false) {
@@ -161,7 +177,7 @@ function memberships() {
   const active = profile?.plan?.tier;
   const until = profile?.plan?.until;
   return `<section class="membership-section stack" id="memberships" aria-labelledby="membership-title">
-    <div><h2 id="membership-title">عضويات ميثاق</h2><p class="bodycopy">ألوان وتدرجات حصرية وتحكّم بشفافية الزجاج، كل الألقاب والثيمات، جلسات ١٢٠ دقيقة واستراحة واحدة لكل جلسة بموافقة شريكك.</p>
+    <div><h2 id="membership-title">عضويات ميثاق</h2><p class="bodycopy">ألوان وتدرجات حصرية وتحكّم بشفافية الزجاج، كل الألقاب والثيمات، جلسات حتى ١٨٠ دقيقة وقوالب تركيز جاهزة واستراحة واحدة لكل جلسة بموافقة شريكك.</p>
     ${active==='pro' && until ? '<p class="bodycopy">برو مفعّل حتى '+new Date(until).toLocaleDateString('ar')+'</p>' : ''}</div>
     <div class="store-grid">${Object.entries(plans).map(([key,plan])=>{
       const price = profile?.prices?.[key];
@@ -331,7 +347,8 @@ function updateClock() {
   const value = Math.ceil(remaining/1000);
   digits.textContent = counting ? String(value) : [Math.floor(value/60),value%60].map(n=>String(n).padStart(2,'0')).join(':');
   document.querySelector('#dial-label').textContent = counting?'تبدأ الجلسة خلال':paused?'وقت الاستراحة':'الوقت المتبقي';
-  digits.closest('.dial').style.setProperty('--progress',Math.min(100,remaining/(room.minutes*60000)*100));
+  const focusRemaining = counting ? room.endAt-room.startsAt : room.endAt-(paused ? room.pauseUntil : now);
+  digits.closest('.dial').style.setProperty('--progress',dialProgress(focusRemaining/60000));
   document.querySelectorAll('[data-exit]').forEach(e=>e.textContent=num(Math.max(0,Math.ceil((Number(e.dataset.exit)-now)/1000)))+' ث');
   const check = room.members.find(p=>p.id===user?.id)?.checkUntil;
   if (check > now && check!==lastCheck && appearanceOpen) dialog.close();
@@ -385,25 +402,27 @@ function inviteUrl() {
 }
 function invitePanel() {
   if (room.members.length === 2) return '';
-  if (tg?.initData) return button('invite','إرسال دعوة عبر تليجرام','primary','send');
   const url = inviteUrl();
-  if (!url) return '<p class="bodycopy">رابط الدعوة غير متاح. تحقّق من إعداد اسم البوت في الاستضافة.</p>';
-  return `<section class="panel stack">
-    <label class="field invite-field">رابط الدعوة<input id="invite-url" dir="ltr" value="${esc(url)}" readonly></label>
-    <div class="actions">${button('copyInvite','نسخ رابط الدعوة','primary','copy')}</div>
+  return `<section class="panel stack invite-options"><h2>ادعُ شريكك</h2>
+    <div class="invite-code"><label>رمز الغرفة<input id="invite-code" dir="ltr" value="${esc(room.code)}" readonly></label>
+    ${button('copyCode','نسخ الرمز','secondary','hash')}</div>
+    ${url?`<label class="field invite-field">رابط الدعوة<input id="invite-url" dir="ltr" value="${esc(url)}" readonly></label>
+      <div class="actions">${button('copyInvite','نسخ الرابط','secondary','link-2')}
+      ${tg?.initData?button('invite','مشاركة عبر تليجرام','primary','send'):''}</div>`:''}
+    ${tg?.initData?`<form id="direct-invite-form" class="join-code"><label class="field">دعوة مباشرة<input name="handle" dir="ltr" placeholder="@username" maxlength="33" required></label><button class="secondary">${icon('user-round-plus')} ادعُه</button></form>`:''}
   </section>`;
 }
-async function copyInvite() {
-  const field = document.querySelector('#invite-url');
+async function copyInvite(selector, message) {
+  const field = document.querySelector(selector);
   if (!field) return;
   try {
     await navigator.clipboard.writeText(field.value);
-    toast('نُسخ رابط الدعوة. أرسله لصديقك في تليجرام.');
+    toast(message);
   } catch {
     field.focus();
     field.select();
     field.setSelectionRange(0,field.value.length);
-    toast('اضغط مطولًا على الرابط واختر «نسخ».');
+    toast('اضغط مطولًا على الحقل واختر «نسخ».');
   }
 }
 async function shareInvite(button) {
@@ -458,7 +477,7 @@ document.addEventListener('click',event=>{
   if (!b) return;
   const {action,value}=b.dataset;
   if (action==='duration') {
-    if (+value===120 && !marathonAvailable()) return toast('تحتاج إلى تذكرة الماراثون من المتجر.');
+    if (!durationAllowed(+value)) return toast(+value===180?'جلسة ١٨٠ دقيقة للمشتركين.':'تحتاج إلى تذكرة الماراثون من المتجر.');
     chosen=+value; render(true);
   } else if (action==='appearanceMenu') openAppearance();
   else if (action==='mode') emit('appearance',{mode:value,palette:profile?.appearance?.palette || 'emerald'});
@@ -467,13 +486,30 @@ document.addEventListener('click',event=>{
     emit('appearance',{mode:profile?.appearance?.mode || defaultAppearance.mode,palette:value});
   }
   else if (action==='seePlans') {
-    dialog.close(); tab='store'; render();
+    if (room?.phase==='active') return toast('الترقية متاحة بعد انتهاء جلسة التركيز.');
+    if (dialog.open) dialog.close();
+    tab='store'; render();
     document.querySelector('#memberships')?.scrollIntoView({block:'start'});
   }
   else if (action==='checkout') checkout(value,b);
   else if (action==='ignore') { inviteDismissed=true; render(true); }
   else if (action==='invite') shareInvite(b);
-  else if (action==='copyInvite') copyInvite();
+  else if (action==='copyInvite') copyInvite('#invite-url','نُسخ رابط الدعوة.');
+  else if (action==='copyCode') copyInvite('#invite-code','نُسخ رمز الغرفة.');
+  else if (action==='template') {
+    if (!isPaid()) return toast('القوالب متاحة مع برو وسبيشل.');
+    const template = sessionTemplates[value];
+    if (!template) return;
+    chosen = template.minutes;
+    goal = template.goal;
+    render(true);
+    document.querySelector('[name="goal"]')?.focus();
+  } else if (action==='acceptInvite') {
+    if (!incomingInvite || (room && room.phase!=='outcome')) return;
+    invite=incomingInvite.code; incomingInvite=null; inviteDismissed=false;
+    revisited=room?.phase==='outcome'; tab='home'; render(true);
+    window.scrollTo({top:0,behavior:'instant'});
+  } else if (action==='dismissInvite') { incomingInvite=null; render(true); }
   else if (action==='filter') { category=+value; render(true); }
   else if (action==='sound') sound(value);
   else if (action==='withdraw') modal('هل تريد الانسحاب؟','يُسجّل الانسحاب وتُخصم حتى ٢٠ نقطة من رصيدك.',button('confirmWithdraw','تأكيد الانسحاب','danger')+button('close','متابعة التركيز','secondary'));
@@ -492,6 +528,18 @@ page.addEventListener('input',event=>{
   if (page.querySelector('#session-form')) page.dataset.content=home();
 });
 page.addEventListener('submit',event=>{
+  if (event.target.id==='direct-invite-form' || event.target.id==='join-code-form') {
+    event.preventDefault();
+    const form = new FormData(event.target);
+    if (event.target.id==='direct-invite-form') emit('directInvite',{handle:form.get('handle')});
+    else {
+      const code=form.get('code').trim().toUpperCase();
+      if (!/^[A-F0-9]{10}$/.test(code)) return toast('اكتب رمز الغرفة المكوّن من ١٠ خانات.');
+      invite=code; inviteDismissed=false; render(true);
+      window.scrollTo({top:0,behavior:'instant'});
+    }
+    return;
+  }
   if (event.target.id!=='session-form') return;
   event.preventDefault();
   emit(isInvite()?'join':'create',isInvite()?{code:invite,goal}:{minutes:chosen,goal,pact});
@@ -548,6 +596,14 @@ socket.on('room', next=>{
     tab='home';
   }
   render();
+});
+socket.on('directInvite', data=>{
+  incomingInvite=data;
+  if (!room || room.phase==='outcome') {
+    if (room?.phase==='outcome') revisited=true;
+    tab='home'; render(true);
+    window.scrollTo({top:0,behavior:'instant'});
+  }
 });
 socket.on('signal',kind=>{
   vibe();
