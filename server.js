@@ -1,6 +1,6 @@
 import express from 'express';
 import { createServer } from 'node:http';
-import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -39,6 +39,8 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS referrals (
     invitee TEXT PRIMARY KEY, inviter TEXT NOT NULL, rewarded_room TEXT
   );
+  CREATE INDEX IF NOT EXISTS referrals_inviter ON referrals(inviter);
+  CREATE TABLE IF NOT EXISTS referral_codes(player TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE);
   CREATE TABLE IF NOT EXISTS telegram_students(id TEXT PRIMARY KEY,name TEXT NOT NULL,handle TEXT);
   CREATE TABLE IF NOT EXISTS banned_students(id TEXT PRIMARY KEY, banned_by TEXT NOT NULL, banned_at INTEGER NOT NULL);
   CREATE TABLE IF NOT EXISTS players(id TEXT PRIMARY KEY, points INTEGER DEFAULT 0, streak INTEGER DEFAULT 0,
@@ -46,6 +48,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS results(room TEXT, player TEXT, status TEXT, reward INTEGER, minutes INTEGER,
     date TEXT DEFAULT CURRENT_TIMESTAMP, goal_done INTEGER, forgiven INTEGER DEFAULT 0, old_streak INTEGER DEFAULT 0,
     PRIMARY KEY(room,player));
+  CREATE INDEX IF NOT EXISTS results_player_date ON results(player,date);
 `);
 const app = express();
 export const http = createServer(app);
@@ -80,7 +83,35 @@ function updatePlayer(id) {
   if (room) send(room);
 }
 
-function profile(id) {
+function canRefer(id, inviter) {
+  return id!==inviter && telegramIdPattern.test(id) && telegramIdPattern.test(inviter) &&
+    !query("SELECT 1 FROM results WHERE player=? AND status='success' LIMIT 1",id);
+}
+
+function referralCode(id) {
+  let row = query('SELECT code FROM referral_codes WHERE player=?',id);
+  while (!row) {
+    const code = 'REF-'+randomBytes(5).toString('hex').toUpperCase();
+    run('INSERT OR IGNORE INTO referral_codes(player,code) VALUES(?,?)',id,code);
+    row = query('SELECT code FROM referral_codes WHERE player=?',id);
+  }
+  return row.code;
+}
+
+function analytics(id) {
+  const now = clock.now();
+  const days = Array.from({length:7},(_,i)=>new Date(now-(6-i)*86400000).toISOString().slice(0,10));
+  const activity = db.prepare(`SELECT substr(date,1,10) AS day, sum(minutes) AS minutes
+    FROM results WHERE player=? AND status='success' AND date>=? GROUP BY day`).all(id,days[0]);
+  const outbound = query('SELECT count(*) AS invited,count(rewarded_room) AS rewarded FROM referrals WHERE inviter=?',id);
+  return {
+    weekly: days.map(day=>({day,minutes:activity.find(entry=>entry.day===day)?.minutes || 0})),
+    referrals: { ...outbound, code:query('SELECT code FROM referral_codes WHERE player=?',id)?.code,
+      linked:Boolean(query('SELECT 1 FROM referrals WHERE invitee=?',id)) }
+  };
+}
+
+function profile(id, includeAnalytics=true) {
   const player = query('SELECT * FROM players WHERE id=?', id);
   const stats = query(`SELECT count(*) FILTER (WHERE status='success') AS completed,
     coalesce(sum(minutes) FILTER (WHERE status='success'),0) AS minutes,
@@ -107,7 +138,7 @@ function profile(id) {
   return { ...player, streak, inventory, equipped, plan, cosmetics, appearance, now:clock.now(),
     admin:admins.has(id), adminAccess:adminAccess(id), prices:billingEnabled && !id.startsWith('guest:') ? paidPrices : {},
     referralBonus:query('SELECT count(*) AS referrals FROM referrals WHERE rewarded_room IS NOT NULL AND (inviter=? OR invitee=?)',id,id).referrals*referralPoints,
-    ...stats, reliability: stats.completed + stats.left ? Math.round(100*stats.completed/(stats.completed+stats.left)) : 100, history };
+    ...(includeAnalytics ? analytics(id) : {}), ...stats, reliability: stats.completed + stats.left ? Math.round(100*stats.completed/(stats.completed+stats.left)) : 100, history };
 }
 
 function use(id, item) {
@@ -138,7 +169,7 @@ function authenticate(auth = {}) {
 
 function send(room) {
   io.to(room.id).emit('room', { ...room, now: clock.now(), members: room.members.map(member => {
-    const { equipped } = profile(member.id);
+    const { equipped } = profile(member.id,false);
     return { ...member, equipped };
   }) });
 }
@@ -155,7 +186,8 @@ function finish(room, leaving) {
       const today = new Date(now).toISOString().slice(0,10);
       const streak = status === 'success' ? current.streak + Number(current.last_day !== today) : status === 'left' ? 0 : current.streak;
       run('UPDATE players SET points=points+?, streak=?, last_day=? WHERE id=?', reward, streak, status === 'success' ? today : current.last_day, p.id);
-      run('INSERT INTO results(room,player,status,reward,minutes,old_streak) VALUES(?,?,?,?,?,?)',room.id,p.id,status,reward,room.minutes,current.streak);
+      const date = new Date(now).toISOString().replace('T',' ').slice(0,19);
+      run('INSERT INTO results(room,player,status,reward,minutes,old_streak,date) VALUES(?,?,?,?,?,?,?)',room.id,p.id,status,reward,room.minutes,current.streak,date);
       if (status==='success' && current.completed===0) {
         const referral = query('SELECT inviter FROM referrals WHERE invitee=? AND rewarded_room IS NULL',p.id);
         if (referral) {
@@ -235,6 +267,7 @@ io.on('connection', (socket) => {
   run('INSERT OR IGNORE INTO players(id) VALUES(?)', id);
   if (telegramIdPattern.test(id)) run(`INSERT INTO telegram_students(id,name,handle) VALUES(?,?,?)
     ON CONFLICT(id) DO UPDATE SET name=excluded.name,handle=excluded.handle`,id,user.name,user.handle || null);
+  if (telegramIdPattern.test(id)) referralCode(id);
   const playerRoom = 'player:'+id;
   socket.join(playerRoom);
   const current = () => rooms.get(memberships.get(id));
@@ -353,6 +386,20 @@ io.on('connection', (socket) => {
       ack({ error:'تعذّر تجهيز رسالة الدعوة من تليجرام. جرّب بعد قليل.' });
     }
   });
+  action('claimReferral', ({code}) => {
+    const normalized = typeof code==='string' ? code.trim().toUpperCase() : '';
+    if (!/^REF-[A-F0-9]{10}$/.test(normalized)) fail('اكتب كود الدعوة الذي يبدأ بـ REF-.');
+    const inviter = query('SELECT player FROM referral_codes WHERE code=?',normalized)?.player;
+    if (!inviter || isBanned(inviter)) fail('كود الدعوة غير متاح.');
+    if (id===inviter) fail('استخدم كود صديقك.');
+    const linked = query('SELECT inviter FROM referrals WHERE invitee=?',id);
+    if (linked?.inviter===inviter) return syncProfile();
+    if (linked) fail('هذا الحساب مرتبط بدعوة سابقة.');
+    if (!canRefer(id,inviter)) fail('أدخل كود الدعوة قبل إكمال جلستك الأولى.');
+    run('INSERT INTO referrals(invitee,inviter) VALUES(?,?)',id,inviter);
+    syncProfile();
+    io.to('player:'+inviter).emit('profile',profile(inviter));
+  });
   action('refreshProfile', () => {
     syncProfile();
     if (current()) send(current());
@@ -436,8 +483,9 @@ io.on('connection', (socket) => {
     if (!room || room.phase !== 'lobby' || room.members.length >= 2) fail('الغرفة ممتلئة أو انتهت صلاحية الدعوة.');
     const inviter = room.members[0].id;
     enter(room,goalText(goal));
-    if (telegramIdPattern.test(id) && telegramIdPattern.test(inviter) && !profile(id).completed) {
-      run('INSERT OR IGNORE INTO referrals(invitee,inviter) VALUES(?,?)',id,inviter);
+    if (canRefer(id,inviter)) {
+      const attached = run('INSERT OR IGNORE INTO referrals(invitee,inviter) VALUES(?,?)',id,inviter);
+      if (attached.changes) { syncProfile(); io.to('player:'+inviter).emit('profile',profile(inviter)); }
     }
   });
   let nextDirectInvite = 0;

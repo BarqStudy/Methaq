@@ -38,7 +38,14 @@ test('runs Telegram invitations, admin changes, custom appearance, and referral 
   assert.ok((await command(recipient,'adminList')).error);
   const hostProfile = once(host,'profile');
   await command(host,'refreshProfile');
-  assert.equal((await hostProfile)[0].adminAccess,'enabled');
+  const [hostDetails] = await hostProfile;
+  assert.equal(hostDetails.adminAccess,'enabled');
+  const referral = hostDetails.referrals.code;
+  assert.match(referral,/^REF-[A-F0-9]{10}$/);
+  assert.ok((await command(host,'claimReferral',{code:referral})).error);
+  const acceptedReferral = once(host,'profile');
+  assert.deepEqual(await command(recipient,'claimReferral',{code:referral.toLowerCase()}),{ok:true});
+  assert.equal((await acceptedReferral)[0].referrals.invited,1);
   const guestProfile = once(recipient,'profile');
   await command(recipient,'refreshProfile');
   assert.equal((await guestProfile)[0].adminAccess,'different-account');
@@ -111,6 +118,8 @@ test('runs Telegram invitations, admin changes, custom appearance, and referral 
   assert.equal(hostResult.points,160);
   assert.equal(recipientResult.points,210);
   assert.equal(hostResult.referralBonus,100);
+  assert.equal(hostResult.referrals.rewarded,1);
+  assert.equal(hostResult.weekly.reduce((sum,day)=>sum+day.minutes,0),25);
   assert.equal(recipientResult.referralBonus,100);
   const outcome = await finished;
   assert.equal(outcome.breakUntil-outcome.finished,5*60000);

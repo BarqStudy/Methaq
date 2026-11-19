@@ -1,5 +1,5 @@
 import { items,sections,palettes,plans,rewards,successReward,storeArt,defaultAppearance,glassRange,durations,referralPoints,specialties,breakMinutes } from './catalog.js';
-import { readRoomInvite,roomInviteUrl } from './invite.js';
+import { readRoomInvite,readReferralInvite,roomInviteUrl,telegramInviteUrl } from './invite.js';
 
 const telegramLaunch = /(?:^#|[&?])tgWebApp/.test(location.hash) || new URLSearchParams(location.search).has('tgWebAppStartParam')
   || sessionStorage.getItem('__telegram__initParams');
@@ -35,7 +35,9 @@ dialog.addEventListener('close',()=>{
   applyGlass();
 });
 dialog.addEventListener('cancel',event=>{ if (dialog.querySelector('#check-deadline')) event.preventDefault(); });
-let invite = readRoomInvite({ startParam:tg?.initDataUnsafe?.start_param, hash:location.hash, search:location.search });
+const launch = {startParam:tg?.initDataUnsafe?.start_param,hash:location.hash,search:location.search};
+let invite = readRoomInvite(launch);
+let referralLaunch = readReferralInvite(launch);
 const icon = (name) => '<i aria-hidden="true" data-icon="'+name+'" style="--icon:url(/icons/'+name+'.svg)"></i>';
 document.querySelectorAll('i[data-icon]').forEach(i => i.style.setProperty('--icon','url(/icons/'+i.dataset.icon+'.svg)'));
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -46,6 +48,7 @@ let preparingInvite = false, incomingInvite;
 let appearanceOpen = false, checkoutOpen = false, expiryTimer, glassPreview, glassRequest = 0;
 const isPaid = () => ['pro','special'].includes(profile?.plan?.tier);
 let purchaseBusy = false;
+let activityDay;
 let adminData, adminSearch = '', adminBusy = false, blocked = false;
 const guestId = sessionStorage.getItem('methaq-guest') || Array.from(crypto.getRandomValues(new Uint8Array(18)), b=>b.toString(16).padStart(2,'0')).join('');
 sessionStorage.setItem('methaq-guest',guestId);
@@ -65,6 +68,7 @@ function emit(event,payload={}) {
     else if (event==='appearance') toast('تم حفظ المظهر.');
     else if (event==='directInvite') toast('أُرسلت الدعوة داخل ميثاق.');
     else if (event==='redeemCode') toast('تم تفعيل عضويتك.');
+    else if (event==='claimReferral') toast('تم تسجيل دعوة صديقك.');
   });
 }
 function avatar(person) {
@@ -185,13 +189,80 @@ function outcome() {
     <strong class="break-time" id="break-time" dir="ltr"></strong></section>`:''}
   ${button('reset','جلسة جديدة','secondary','plus')}</div></div>`;
 }
+const weekDay = new Intl.DateTimeFormat('ar-SA',{weekday:'short',timeZone:'UTC'});
+const sessionDate = new Intl.DateTimeFormat('ar-SA',{day:'numeric',month:'short',calendar:'gregory',timeZone:'UTC'});
+const dateFromKey = (value) => new Date(value+'T00:00:00Z');
 function stats() {
   const p = profile || {};
-  return `<div class="inner">${heading('الإحصائيات','تابع تقدّمك في جلسات التركيز.') }
-  <div class="stack"><div class="stat-grid">${[[p.completed,'جلسات مكتملة'],[p.minutes,'دقائق تركيز'],[p.streak,'أيام متتالية']].map(([n,l])=>`<div class="panel"><strong>${num(n)}</strong><p>${l}</p></div>`).join('')}</div>
-  <section class="panel"><h2>مكافآت دعوات الأصدقاء</h2><p class="bodycopy">حصلت على <strong>${num(p.referralBonus)} نقطة</strong> من الدعوات.</p>
-  <p class="bodycopy">شارك دعوة غرفة مع صديق جديد. إذا أكمل أول جلسة له يحصل كل واحد منكما على ${num(referralPoints)} نقطة.</p></section>
-  <section class="panel"><h2>سجل الجلسات</h2>${p.history?.length?p.history.map(r=>`<div class="list-row"><div><strong>${labels[r.status]}</strong><p class="muted">${esc(r.date.slice(0,10))} · ${num(r.minutes)} دقيقة</p></div><span class="${r.reward<0?'gold':'mint'}">${r.reward>0?'+':''}${num(r.reward)} نقطة</span></div>`).join(''):'<p class="bodycopy">سيظهر سجلّك بعد أول جلسة.</p>'}</section></div></div>`;
+  const values = [
+    ['timer','دقائق التركيز',p.minutes,'teal'],
+    ['circle-check','جلسات مكتملة',p.completed,'blue'],
+    ['flame','أيام متتالية',p.streak,'amber']
+  ];
+  return `<div class="inner stats-page">${heading('إحصائياتك','تابع تقدّمك في جلسات التركيز.')}
+    <div class="stats-metrics">${values.map(([symbol,label,value,tone])=>`<article class="panel stats-metric tone-${tone}">
+      <span class="stats-icon">${icon(symbol)}</span><strong>${num(value)}</strong><span>${label}</span></article>`).join('')}</div>
+    <div class="stats-overview">${referralCard(p)}${activityCard(p.weekly || [])}</div>
+    <section class="panel stats-history">
+      <div class="stats-section-head"><span class="stats-icon">${icon('history')}</span><h2>سجل الجلسات</h2></div>
+      ${p.history?.length?`<ul>${p.history.map(r=>{
+        const symbols = { success:'circle-check', steadfast:'shield', left:'log-out' };
+        return `<li class="stats-history-row result-${r.status}"><span class="stats-icon">${icon(symbols[r.status])}</span>
+          <div><strong>${labels[r.status]}</strong><small>${sessionDate.format(dateFromKey(r.date.slice(0,10)))} · ${num(r.minutes)} دقيقة</small></div>
+          <span class="history-reward"><bdi>${r.reward>0?'+':''}${num(r.reward)}</bdi> نقطة</span></li>`;
+      }).join('')}</ul>`:`<div class="stats-empty">${icon('clipboard-list')}<p>سجل الجلسات فارغ.</p>${button('goHome','ابدأ جلسة','secondary','arrow-left')}</div>`}
+    </section></div>`;
+}
+function activityCard(week) {
+  const total = week.reduce((sum,entry)=>sum+entry.minutes,0);
+  const peak = Math.max(1,...week.map(entry=>entry.minutes));
+  const selected = week.find(entry=>entry.day===activityDay);
+  return `<section class="panel activity-card">
+    <div class="stats-section-head"><span class="stats-icon">${icon('chart-no-axes-column')}</span><div><h2>نشاط التركيز</h2><p>آخر ٧ أيام</p></div></div>
+    <div class="week-total"><strong>${num(total)}</strong> دقيقة</div>
+    <div class="week-chart" role="group" aria-label="دقائق التركيز حسب اليوم">${week.map(entry=>{
+      const day = weekDay.format(dateFromKey(entry.day));
+      return `<button class="chart-day" type="button" data-action="activityDay" data-value="${entry.day}" aria-label="${day}، ${num(entry.minutes)} دقيقة" aria-pressed="${entry.day===activityDay}">
+        <span class="chart-track"><span class="chart-bar" style="--bar-height:${entry.minutes/peak*100}%"></span></span><small>${day}</small></button>`;
+    }).join('')}</div>
+    <p class="chart-detail" aria-live="polite">${selected?sessionDate.format(dateFromKey(selected.day))+' · '+num(selected.minutes)+' دقيقة':total?'اضغط على يوم لعرض مدته.':'يظهر نشاطك هنا بعد أول جلسة مكتملة.'}</p>
+  </section>`;
+}
+function referralCard(p) {
+  const {code,invited=0,rewarded=0,linked} = p.referrals || {};
+  const link = code && telegramInviteUrl({bot,shortName,code});
+  return `<section class="panel referral-card">
+    <div class="stats-section-head"><span class="stats-icon">${icon('gift')}</span><div><h2>دعوة الأصدقاء</h2><p>${num(referralPoints)} نقطة لك ولصديقك بعد أول جلسة مكتملة له.</p></div></div>
+    ${code?`<div class="referral-code"><div><label for="my-referral-code">كودك الشخصي</label><input id="my-referral-code" dir="ltr" value="${esc(code)}" readonly></div>${button('copyReferralCode','نسخ الكود','secondary','copy')}</div>
+      ${link?`<div class="actions referral-links">${button('shareReferral','شارك رابط الدعوة','primary','send')}${button('copyReferralLink','نسخ الرابط','plain','link-2')}</div>`:''}`:'<p class="bodycopy">افتح ميثاق من تليجرام للحصول على كودك.</p>'}
+    <div class="referral-counts">
+      <div><strong>${num(invited)}</strong><span>أصدقاء انضموا</span></div>
+      <div><strong>${num(rewarded)}</strong><span>أكملوا أول جلسة</span></div>
+      <div><strong>${num(p.referralBonus)}</strong><span>نقاط الدعوات</span></div>
+    </div>
+    ${code && !linked && !p.completed?`<details class="claim-referral"><summary>عندك كود من صديق؟</summary>
+      <form id="claim-referral-form"><input aria-label="كود دعوة صديق" name="code" dir="ltr" maxlength="14" placeholder="REF-…" required>
+      <button class="secondary">سجّل الكود</button></form></details>`:''}
+  </section>`;
+}
+async function shareReferral(copyOnly) {
+  const code = profile?.referrals?.code;
+  if (!code) return;
+  const link = telegramInviteUrl({bot,shortName,code});
+  if (!link) return;
+  if (!copyOnly && tg?.initData) {
+    const share = new URL('https://t.me/share/url');
+    share.searchParams.set('url',link);
+    share.searchParams.set('text','انضم إلى ميثاق التركيز وسجّل دعوتك.');
+    try { tg.openTelegramLink(share.href); return; } catch { /* Fall through to clipboard. */ }
+  }
+  try {
+    await navigator.clipboard.writeText(link);
+    toast('نُسخ رابط دعوتك.');
+  } catch {
+    modal('رابط دعوتك','اضغط مطولًا على الرابط لنسخه.',
+      '<input class="referral-link-field" value="'+esc(link)+'" dir="ltr" readonly>'+button('close','إغلاق','secondary'));
+  }
 }
 function memberships() {
   const active = profile?.plan?.tier;
@@ -710,6 +781,10 @@ document.addEventListener('click',event=>{
   else if (action==='adminCopy') {
     navigator.clipboard?.writeText(value).then(()=>toast('نُسخ الكود.'),()=>toast('حدد الكود وانسخه يدويًا.'));
   }
+  else if (action==='goHome') { tab='home'; render(); window.scrollTo({top:0,behavior:'instant'}); }
+  else if (action==='activityDay') { activityDay=value; render(true); }
+  else if (action==='copyReferralCode') copyInvite('#my-referral-code','نُسخ كود دعوتك.');
+  else if (action==='copyReferralLink' || action==='shareReferral') shareReferral(action==='copyReferralLink');
   else if (action==='checkout') checkout(value,b);
   else if (action==='ignore') { inviteDismissed=true; render(true); }
   else if (action==='invite') shareInvite(b);
@@ -740,6 +815,11 @@ page.addEventListener('input',event=>{
 });
 page.addEventListener('submit',event=>{
   const formElement = event.target;
+  if (formElement.id==='claim-referral-form') {
+    event.preventDefault();
+    emit('claimReferral',{code:new FormData(formElement).get('code')});
+    return;
+  }
   if (formElement.classList.contains('buy-form')) {
     event.preventDefault();
     purchasePrompt(formElement.dataset.item,Number(new FormData(formElement).get('quantity') || 1));
@@ -830,6 +910,11 @@ function updateProfile(data) {
 socket.on('hello', data=>{
   ({user,bot,shortName}=data);
   updateProfile(data.profile);
+  if (referralLaunch && data.profile.referrals?.code) {
+    const code = referralLaunch;
+    referralLaunch = null;
+    emit('claimReferral',{code});
+  }
   presence();
 });
 socket.on('profile',updateProfile);

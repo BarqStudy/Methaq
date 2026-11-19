@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { readRoomInvite,roomInviteUrl } from '../public/invite.js';
+import { readRoomInvite,readReferralInvite,roomInviteUrl,telegramInviteUrl } from '../public/invite.js';
 
 const code = 'a'.repeat(32);
 
@@ -17,4 +17,12 @@ test('reads Telegram room code from init data, launch parameters, or local invit
   assert.equal(readRoomInvite({hash:'',search:'?tgWebAppStartParam='+code}),code);
   assert.equal(readRoomInvite({hash:'',search:'?room='+code}),code);
   assert.equal(readRoomInvite({startParam:'bad',hash:'',search:''}),undefined);
+});
+
+test('keeps referral launch codes separate from room invitations', () => {
+  const code = 'REF-01A2B3C4D5';
+  const launch = {hash:'#tgWebAppStartParam='+code,search:''};
+  assert.equal(readReferralInvite(launch),code);
+  assert.equal(readRoomInvite(launch),undefined);
+  assert.equal(telegramInviteUrl({bot:'MethaqTestBot',code}),'https://t.me/MethaqTestBot?startapp='+code);
 });
