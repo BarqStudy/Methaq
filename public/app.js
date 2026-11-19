@@ -1,4 +1,4 @@
-import { items,sections,palettes,plans,rewards,successReward,storeArt,defaultAppearance } from './catalog.js';
+import { items,sections,palettes,plans,rewards,successReward,storeArt,defaultAppearance,glassRange } from './catalog.js';
 import { readRoomInvite,roomInviteUrl } from './invite.js';
 
 const telegramLaunch = /(?:^#|[&?])tgWebApp/.test(location.hash) || new URLSearchParams(location.search).has('tgWebAppStartParam')
@@ -22,7 +22,11 @@ if (tg?.initData) {
 const page = document.querySelector('#page');
 const dialog = document.querySelector('#dialog');
 const notice = document.querySelector('#notice');
-dialog.addEventListener('close',()=>{ appearanceOpen=false; });
+dialog.addEventListener('close',()=>{
+  appearanceOpen=false;
+  glassPreview=undefined;
+  applyGlass();
+});
 dialog.addEventListener('cancel',event=>{ if (dialog.querySelector('#check-deadline')) event.preventDefault(); });
 const invite = readRoomInvite({ startParam:tg?.initDataUnsafe?.start_param, hash:location.hash, search:location.search });
 const icon = (name) => '<i aria-hidden="true" data-icon="'+name+'" style="--icon:url(/icons/'+name+'.svg)"></i>';
@@ -32,7 +36,7 @@ const num = (v) => Number(v || 0).toLocaleString('ar',{numberingSystem:'arab'});
 let room, socket, user, profile, bot, shortName, clockOffset = 0, chosen = 25, tab = 'home', category = 0, goal = '', pact = '', inviteDismissed = false;
 let viewKey, noticeTimeout, revisited, lastActivity = 0, lastCheck, audio, ambience;
 let preparingInvite = false;
-let appearanceOpen = false, checkoutOpen = false, expiryTimer;
+let appearanceOpen = false, checkoutOpen = false, expiryTimer, glassPreview, glassRequest = 0;
 const isPaid = () => ['pro','special'].includes(profile?.plan?.tier);
 const marathonAvailable = () => isPaid() || profile?.inventory?.marathon;
 const guestId = sessionStorage.getItem('methaq-guest') || Array.from(crypto.getRandomValues(new Uint8Array(18)), b=>b.toString(16).padStart(2,'0')).join('');
@@ -146,7 +150,7 @@ function memberships() {
   const active = profile?.plan?.tier;
   const until = profile?.plan?.until;
   return `<section class="membership-section stack" id="memberships" aria-labelledby="membership-title">
-    <div><h2 id="membership-title">عضويات ميثاق</h2><p class="bodycopy">ألوان وتدرجات حصرية، كل الألقاب والثيمات، جلسات ١٢٠ دقيقة واستراحة واحدة لكل جلسة بموافقة شريكك.</p>
+    <div><h2 id="membership-title">عضويات ميثاق</h2><p class="bodycopy">ألوان وتدرجات حصرية وتحكّم بشفافية الزجاج، كل الألقاب والثيمات، جلسات ١٢٠ دقيقة واستراحة واحدة لكل جلسة بموافقة شريكك.</p>
     ${active==='pro' && until ? '<p class="bodycopy">برو مفعّل حتى '+new Date(until).toLocaleDateString('ar')+'</p>' : ''}</div>
     <div class="store-grid">${Object.entries(plans).map(([key,plan])=>{
       const price = profile?.prices?.[key];
@@ -192,11 +196,48 @@ function openAppearance() {
       return `<button type="button" class="palette-option" data-action="palette" data-value="${key}" aria-pressed="${appearance.palette===key}">
         <span class="swatch" style="background:${palette.swatch}">${locked?icon('lock-keyhole'):''}</span>${palette.label}</button>`;
     }).join('')}</div>${!isPaid()?'<p class="bodycopy">الزمردي والأزرق متاحان للجميع. التدرجات والألوان الأخرى مع برو وسبيشل.</p>':''}</section>
+    <section class="appearance-card glass-settings">
+      <label for="glass-range">${icon(isPaid()?'droplets':'lock-keyhole')} شفافية الزجاج <output id="glass-value" for="glass-range">${num(appearance.transparency)}٪</output></label>
+      <input id="glass-range" type="range" min="${glassRange.min}" max="${glassRange.max}" value="${appearance.transparency}" ${isPaid()?'':'disabled aria-describedby="glass-lock"'}>
+      ${isPaid()?'':'<p class="bodycopy" id="glass-lock">تحكّم بالشفافية مع برو وسبيشل.</p>'}
+    </section>
     ${!isPaid() && room?.phase!=='active' ? button('seePlans','عرض العضويات','secondary','crown') : ''}</div>`;
   if (!dialog.open) dialog.showModal();
 }
 
+function applyGlass() {
+  const transparency = glassPreview ?? profile?.appearance?.transparency ?? glassRange.defaultValue;
+  document.documentElement.style.setProperty('--glass-transparency',transparency+'%');
+}
+dialog.addEventListener('input',event=>{
+  if (event.target.id!=='glass-range' || !isPaid()) return;
+  glassPreview = event.target.valueAsNumber;
+  dialog.querySelector('#glass-value').value = num(glassPreview)+'٪';
+  applyGlass();
+});
+dialog.addEventListener('change',async event=>{
+  if (event.target.id!=='glass-range' || !isPaid()) return;
+  const range = event.target;
+  const {mode,palette} = profile.appearance;
+  const request = ++glassRequest;
+  try {
+    const response = await socket.timeout(5000).emitWithAck('appearance',{mode,palette,transparency:range.valueAsNumber});
+    if (response.error) throw new Error(response.error);
+  } catch (error) {
+    toast(error.message || 'تعذّر حفظ الشفافية.');
+  } finally {
+    if (request === glassRequest && glassPreview === range.valueAsNumber) {
+      glassPreview = undefined;
+      applyGlass();
+      range.value = profile.appearance.transparency;
+      const output = dialog.querySelector('#glass-value');
+      if (output) output.value = num(profile.appearance.transparency)+'٪';
+    }
+  }
+});
+
 function applyAppearance() {
+  applyGlass();
   const {mode,palette} = profile?.appearance || defaultAppearance;
   document.documentElement.dataset.mode = mode;
   document.documentElement.dataset.palette = palette;
@@ -455,15 +496,17 @@ socket = window.io({auth:{initData:tg?.initData,guest:guestId,name}});
 socket.on('connect_error', error=>toast(error.message));
 socket.on('disconnect',()=>toast('انقطع الاتصال. جارٍ إعادة المحاولة.'));
 function updateProfile(data) {
-  const changed = JSON.stringify(profile?.appearance) !== JSON.stringify(data.appearance) || profile?.plan?.tier !== data.plan?.tier;
+  const changed = profile?.appearance?.mode !== data.appearance?.mode || profile?.appearance?.palette !== data.appearance?.palette || profile?.plan?.tier !== data.plan?.tier;
   profile = data;
   clearTimeout(expiryTimer);
   const expires = [data.plan?.until,...Object.values(data.cosmetics || {})].filter(value=>value>data.now);
   if (expires.length) expiryTimer = setTimeout(()=>emit('refreshProfile'),Math.min(2147483647,Math.min(...expires)-data.now+250));
   render(true);
   if (changed && appearanceOpen && dialog.open) {
-    const focused = dialog.querySelector(':focus')?.dataset;
+    const focus = dialog.querySelector(':focus');
+    const focused = focus?.dataset;
     openAppearance();
+    if (focus?.id==='glass-range') dialog.querySelector('#glass-range')?.focus();
     if (focused?.action && focused?.value) dialog.querySelector('[data-action="'+focused.action+'"][data-value="'+focused.value+'"]')?.focus();
   }
 }

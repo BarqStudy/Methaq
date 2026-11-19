@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { defaultAppearance,plans } from './public/catalog.js';
+import { defaultAppearance,glassRange,plans } from './public/catalog.js';
 
 const day = 86400000;
 export const cosmeticDuration = 3 * day;
@@ -17,7 +17,8 @@ export function createMembership(db, now) {
       player TEXT NOT NULL, item TEXT NOT NULL, expires_at INTEGER NOT NULL, PRIMARY KEY(player,item)
     );
     CREATE TABLE IF NOT EXISTS appearances (
-      player TEXT PRIMARY KEY, mode TEXT NOT NULL, palette TEXT NOT NULL
+      player TEXT PRIMARY KEY, mode TEXT NOT NULL, palette TEXT NOT NULL,
+      transparency INTEGER NOT NULL DEFAULT ${glassRange.defaultValue}
     );
     CREATE TABLE IF NOT EXISTS membership_invoices (
       payload TEXT PRIMARY KEY, player TEXT NOT NULL, plan TEXT NOT NULL, amount INTEGER NOT NULL,
@@ -28,8 +29,12 @@ export function createMembership(db, now) {
     SELECT players.id, owned.key, ? FROM players, json_each(players.inventory) AS owned
     WHERE owned.value > 0 AND owned.key IN ('scholar','owl','steadfast','frame')`).run(now()+cosmeticDuration);
 
+  if (!db.prepare('PRAGMA table_info(appearances)').all().some(column=>column.name==='transparency')) {
+    db.exec(`ALTER TABLE appearances ADD COLUMN transparency INTEGER NOT NULL DEFAULT ${glassRange.defaultValue}`);
+  }
+
   const readMembership = db.prepare('SELECT pro_until, special FROM memberships WHERE player=?');
-  const readAppearance = db.prepare('SELECT mode,palette FROM appearances WHERE player=?');
+  const readAppearance = db.prepare('SELECT mode,palette,transparency FROM appearances WHERE player=?');
   const readCosmetics = db.prepare('SELECT item,expires_at FROM cosmetic_expiry WHERE player=? AND expires_at>?');
   const findInvoice = db.prepare('SELECT * FROM membership_invoices WHERE payload=?');
   const addInvoice = db.prepare('INSERT INTO membership_invoices(payload,player,plan,amount,created) VALUES(?,?,?,?,?)');
@@ -37,8 +42,8 @@ export function createMembership(db, now) {
   const findCharge = db.prepare('SELECT 1 FROM membership_invoices WHERE charge=?');
   const grantPlan = db.prepare(`INSERT INTO memberships(player,pro_until,special) VALUES(?,?,?)
     ON CONFLICT(player) DO UPDATE SET pro_until=excluded.pro_until,special=max(special,excluded.special)`);
-  const setAppearance = db.prepare(`INSERT INTO appearances(player,mode,palette) VALUES(?,?,?)
-    ON CONFLICT(player) DO UPDATE SET mode=excluded.mode,palette=excluded.palette`);
+  const setAppearance = db.prepare(`INSERT INTO appearances(player,mode,palette,transparency) VALUES(?,?,?,?)
+    ON CONFLICT(player) DO UPDATE SET mode=excluded.mode,palette=excluded.palette,transparency=excluded.transparency`);
   const setCosmetic = db.prepare(`INSERT INTO cosmetic_expiry(player,item,expires_at) VALUES(?,?,?)
     ON CONFLICT(player,item) DO UPDATE SET expires_at=excluded.expires_at`);
 
@@ -59,7 +64,9 @@ export function createMembership(db, now) {
     cosmetics(player) {
       return Object.fromEntries(readCosmetics.all(player,now()).map(row=>[row.item,row.expires_at]));
     },
-    setAppearance(player, mode, palette) { setAppearance.run(player,mode,palette); },
+    setAppearance(player, mode, palette, transparency) {
+      setAppearance.run(player,mode,palette,transparency ?? readAppearance.get(player)?.transparency ?? glassRange.defaultValue);
+    },
     grantCosmetic(player, item) { setCosmetic.run(player,item,now()+cosmeticDuration); },
     newInvoice(player, plan) {
       const payload = 'membership_'+randomUUID();

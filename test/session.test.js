@@ -34,6 +34,7 @@ test('two-person pact synchronizes and settles rewards, purchases, and withdrawa
   });
   const a = await guest('أحمد');
   assert.ok((await command(a,'appearance',{mode:'dark',palette:'aurora'})).error);
+  assert.ok((await command(a,'appearance',{mode:'light',palette:'blue',transparency:40})).error);
   const appearance = waitFor(a,'profile',r=>r.appearance.palette==='blue');
   assert.deepEqual(await command(a,'appearance',{mode:'light',palette:'blue'}),{ok:true});
   assert.equal((await appearance).appearance.mode,'light');

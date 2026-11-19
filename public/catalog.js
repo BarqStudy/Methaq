@@ -20,7 +20,8 @@ export const items = {
 export const rewards = { achievement:45, cooperation:15, steadfast:25, withdrawal:20 };
 export const successReward = rewards.achievement + rewards.cooperation;
 
-export const defaultAppearance = { mode:'light', palette:'emerald' };
+export const glassRange = { min:12, max:46, defaultValue:24 };
+export const defaultAppearance = { mode:'light', palette:'emerald', transparency:glassRange.defaultValue };
 
 export const palettes = {
   emerald: { label:'زمردي', swatch:'#55dbae' },

@@ -6,7 +6,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { Server } from 'socket.io';
 import { Telegraf, Markup } from 'telegraf';
-import { items,palettes,plans,rewards,successReward } from './public/catalog.js';
+import { items,glassRange,palettes,plans,rewards,successReward } from './public/catalog.js';
 import { createMembership,paidPrices } from './membership.js';
 import { roomInviteUrl } from './public/invite.js';
 
@@ -61,6 +61,7 @@ function profile(id) {
     for (const slot of ['title','frame']) if (!cosmetics[equipped[slot]]) delete equipped[slot];
     if (!inventory[equipped.theme]) delete equipped.theme;
     if (palettes[appearance.palette]?.premium) appearance.palette = 'emerald';
+    appearance.transparency = glassRange.defaultValue;
   }
   return { ...player, streak, inventory, equipped, plan, cosmetics, appearance, now:clock.now(),
     prices:billingEnabled && !id.startsWith('guest:') ? paidPrices : {},
@@ -212,10 +213,16 @@ io.on('connection', (socket) => {
     syncProfile();
     if (current()) send(current());
   });
-  action('appearance', ({mode,palette}) => {
+  action('appearance', ({mode,palette,transparency}) => {
     if (!['dark','light'].includes(mode) || !Object.hasOwn(palettes,palette)) fail('المظهر غير متاح.');
     if (palettes[palette].premium && !isPaid(id)) fail('هذا اللون متاح مع برو وسبيشل.');
-    membership.setAppearance(id,mode,palette);
+    if (transparency !== undefined) {
+      if (!isPaid(id)) fail('التحكم بالشفافية متاح مع برو وسبيشل.');
+      if (!Number.isInteger(transparency) || transparency < glassRange.min || transparency > glassRange.max) {
+        fail('درجة الشفافية غير متاحة.');
+      }
+    }
+    membership.setAppearance(id,mode,palette,transparency);
     syncProfile();
   });
 

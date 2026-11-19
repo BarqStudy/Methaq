@@ -8,7 +8,9 @@ test('expires cosmetics and Pro, preserves Special, and records each verified ch
   const { createMembership,cosmeticDuration } = await import('../membership.js');
   const db = new DatabaseSync(':memory:');
   db.exec(`CREATE TABLE players(id TEXT PRIMARY KEY,inventory TEXT);
-    INSERT INTO players VALUES ('101','{"owl":1,"coffee":1}');`);
+    INSERT INTO players VALUES ('101','{"owl":1,"coffee":1}');
+    CREATE TABLE appearances(player TEXT PRIMARY KEY,mode TEXT NOT NULL,palette TEXT NOT NULL);
+    INSERT INTO appearances VALUES ('102','dark','blue');`);
   let now = Date.now();
   const membership = createMembership(db,()=>now);
   const transact = (fn) => {
@@ -23,9 +25,11 @@ test('expires cosmetics and Pro, preserves Special, and records each verified ch
 
   membership.grantCosmetic('101','owl');
   assert.equal(membership.cosmetics('101').owl,now+cosmeticDuration);
-  assert.deepEqual(membership.appearance('101'),{mode:'light',palette:'emerald'});
-  membership.setAppearance('101','dark','blue');
-  assert.deepEqual({...createMembership(db,()=>now).appearance('101')},{mode:'dark',palette:'blue'});
+  assert.deepEqual(membership.appearance('101'),{mode:'light',palette:'emerald',transparency:24});
+  assert.deepEqual({...membership.appearance('102')},{mode:'dark',palette:'blue',transparency:24});
+  membership.setAppearance('101','dark','blue',42);
+  membership.setAppearance('101','light','blue');
+  assert.deepEqual({...createMembership(db,()=>now).appearance('101')},{mode:'light',palette:'blue',transparency:42});
 
   const pro = membership.newInvoice('101','pro');
   const payment = {user:101,amount:50,currency:'XTR',charge:'first-charge'};
