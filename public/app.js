@@ -93,18 +93,20 @@ function dial(text,label) {
 }
 function home() {
   const joining = isInvite();
-  return `<section class="intro"><div class="eyebrow"><span class="dot"></span> تركيز ثنائي</div><h1>${joining?'لديك دعوة للتركيز':'وقتٌ للتركيز، معًا.'}</h1>
-    <p>${joining?'اكتب هدفك للانضمام إلى شريكك في غرفة التركيز.':'حدّد هدفك، وادعُ شريكك، وابدآ جلسة تركيز تلتزمان بها معًا.'}</p></section>
-    <div class="grid-home">
-    <form class="panel form-main" id="session-form"><div class="panel-title"><span class="tile-icon">${icon('sliders-horizontal')}</span><div><h2>${joining?'انضم إلى الجلسة':'إعداد الجلسة'}</h2><p>${joining?'أخبر شريكك بما تنوي إنجازه.':'اختر المدة واكتب ما تنوي إنجازه.'}</p></div></div>
-    ${joining?'':`<div class="field">مدة الجلسة<div class="durations">${[25,50,90,120].map(m=>`<button type="button" class="duration ${m===chosen?'on':''}" data-action="duration" data-value="${m}" aria-pressed="${m===chosen}"><strong>${num(m)}</strong> دقيقة${m===120&&!marathonAvailable()?icon('lock-keyhole'):''}</button>`).join('')}</div></div>`}
+  return `<div class="inner focus-home">
+    ${joining ? `<section class="intro"><h1>لديك دعوة للتركيز</h1><p>اكتب هدفك للانضمام إلى شريكك في غرفة التركيز.</p></section>` : `
+    <section class="panel preview home-timer" aria-labelledby="focus-timer-title">
+      <div class="preview-top"><h1 id="focus-timer-title">مؤقت التركيز</h1><span class="tag"><span class="dot"></span> جلسة ثنائية</span></div>
+      ${dial(chosen+':00','مدة الجلسة')}
+      <p class="preview-note">${icon('users')} يبدأ المؤقت بعد موافقة الطرفين</p>
+    </section>
+    <div class="durations" role="group" aria-label="مدة الجلسة">${[25,50,90,120].map(m=>`<button type="button" class="duration ${m===chosen?'on':''}" data-action="duration" data-value="${m}" aria-pressed="${m===chosen}"><strong>${num(m)}</strong> دقيقة${m===120&&!marathonAvailable()?icon('lock-keyhole'):''}</button>`).join('')}</div>`}
+    <form class="panel form-main" id="session-form"><div class="panel-title"><span class="tile-icon">${icon('sliders-horizontal')}</span><div><h2>${joining?'انضم إلى الجلسة':'إعداد الجلسة'}</h2></div></div>
     <label class="field">هدف الجلسة<input required maxlength="160" name="goal" placeholder="ماذا ستنجز في هذه الجلسة؟" value="${esc(goal)}"></label>
     ${joining?'':`<label class="field">ميثاق تشجيعي <small class="optional">اختياري</small><input maxlength="160" name="pact" placeholder="مثال: نلخّص فصلًا بعد الجلسة" value="${esc(pact)}"></label>`}
     <button class="primary wide">${icon(joining?'users':'plus')}${joining?'الانضمام إلى الغرفة':'إنشاء غرفة وادعُ شريكك'}</button>
     ${joining?button('ignore','العودة للرئيسية','plain'):''}</form>
-    <section class="panel preview"><div class="preview-top"><h2>معاينة الجلسة</h2><span class="tag"><span class="dot"></span> جلسة ثنائية</span></div>
-    ${dial(chosen+':00','على استعداد للتركيز')}<p class="preview-note">${icon('users')} يبدأ المؤقت بعد موافقة الطرفين على الميثاق</p></section></div>
-    <div class="pact-bar"><span class="tile-icon">${icon('shield-check')}</span><div><strong>ميثاق الجلسة</strong><p>عند إتمام الجلسة، تمنح المنصة كل طرف ${num(rewards.achievement)} نقطة إنجاز و${num(rewards.cooperation)} نقطة تعاون.</p></div><span class="tag">${icon('sparkles')} مكافأة المنصة</span></div>`;
+    <div class="pact-bar"><span class="tile-icon">${icon('shield-check')}</span><div><strong>ميثاق الجلسة</strong><p>عند إتمام الجلسة، تمنح المنصة كل طرف ${num(rewards.achievement)} نقطة إنجاز و${num(rewards.cooperation)} نقطة تعاون.</p></div><span class="tag">${icon('sparkles')} مكافأة المنصة</span></div></div>`;
 }
 function person(p, active=false) {
   if (!p) return `<article class="panel person">${avatar()}<div><h3>شريك التركيز</h3><p>بانتظار الانضمام</p></div></article>`;
