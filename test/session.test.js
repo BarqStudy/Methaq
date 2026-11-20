@@ -67,12 +67,12 @@ test('two-person pact synchronizes and settles rewards, purchases, and withdrawa
   const successA = waitFor(a,'profile',r=>r.completed===1);
   const successB = waitFor(b,'profile',r=>r.completed===1);
   offset += first.endAt-clock.now()+1;
-  assert.equal((await successA).points,60);
+  assert.equal((await successA).points,45);
   assert.equal((await successB).streak,1);
 
   const purchase = waitFor(a,'profile',r=>r.inventory.coffee===1);
   assert.deepEqual(await command(a,'buy',{item:'coffee'}),{ok:true});
-  assert.equal((await purchase).points,20);
+  assert.equal((await purchase).points,5);
 
   const second = await begin();
   offset += second.startsAt-clock.now()+1;
@@ -83,7 +83,7 @@ test('two-person pact synchronizes and settles rewards, purchases, and withdrawa
   assert.deepEqual(await command(a,'presence',{hidden:true}),{ok:true});
   const state = await leaving;
   const penalty = waitFor(a,'profile',r=>r.left===1);
-  const compensation = waitFor(b,'profile',r=>r.points===85);
+  const compensation = waitFor(b,'profile',r=>r.points===70);
   offset += state.members[0].exitAt-clock.now()+1;
   assert.equal((await penalty).points,0);
   assert.equal((await compensation).history[0].reward,25);

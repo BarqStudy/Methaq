@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 import { createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Server } from 'socket.io';
 import { Telegraf, Markup } from 'telegraf';
-import { items,glassRange,palettes,plans,rewards,successReward,durations,referralPoints,breakMinutes } from './public/catalog.js';
+import { items,glassRange,palettes,plans,rewards,successReward,durations,referralPoints,breakMinutes,specialOnly } from './public/catalog.js';
 import { createMembership,paidPrices } from './membership.js';
 import { roomInviteUrl } from './public/invite.js';
 import { createDatabase } from './database.js';
@@ -50,6 +50,8 @@ await db.exec(`
     expires_at BIGINT NOT NULL,created_by TEXT NOT NULL,created_at BIGINT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS point_grants_player_expiry ON point_grants(player,expires_at);
+  CREATE TABLE IF NOT EXISTS room_pairs(room TEXT PRIMARY KEY,first_player TEXT NOT NULL,second_player TEXT NOT NULL,started_at BIGINT NOT NULL);
+  CREATE INDEX IF NOT EXISTS room_pairs_players ON room_pairs(first_player,second_player);
 `);
 const app = express();
 export const http = createServer(app);
@@ -118,15 +120,17 @@ async function referralCode(id) {
 async function analytics(id) {
   const now = clock.now();
   const days = Array.from({length:7},(_,i)=>new Date(now-(6-i)*86400000).toISOString().slice(0,10));
-  const [activity,outbound,code,linked]=await Promise.all([
+  const [activity,outbound,code,linked,leaders]=await Promise.all([
     db.all(`SELECT substr(date,1,10) AS day, sum(minutes) AS minutes FROM results WHERE player=? AND status='success' AND date>=? GROUP BY day`,id,days[0]),
     query('SELECT count(*) AS invited,count(rewarded_room) AS rewarded FROM referrals WHERE inviter=?',id),
     query('SELECT code FROM referral_codes WHERE player=?',id),
-    query('SELECT 1 FROM referrals WHERE invitee=?',id)
+    query('SELECT 1 FROM referrals WHERE invitee=?',id),
+    db.all(`SELECT pairs.first_player,pairs.second_player,pairs.sessions,coalesce(a.name,'طالب ميثاق') AS first_name,coalesce(b.name,'طالب ميثاق') AS second_name FROM (SELECT first_player,second_player,count(*) AS sessions FROM room_pairs GROUP BY first_player,second_player ORDER BY sessions DESC LIMIT 10) pairs LEFT JOIN telegram_students a ON a.id=pairs.first_player LEFT JOIN telegram_students b ON b.id=pairs.second_player ORDER BY pairs.sessions DESC`)
   ]);
   return {
     weekly: days.map(day=>({day,minutes:Number(activity.find(entry=>entry.day===day)?.minutes || 0)})),
-    referrals: { invited:Number(outbound.invited),rewarded:Number(outbound.rewarded),code:code?.code,linked:Boolean(linked) }
+    referrals: { invited:Number(outbound.invited),rewarded:Number(outbound.rewarded),code:code?.code,linked:Boolean(linked) },
+    leaderboard:leaders.map(row=>({...row,sessions:Number(row.sessions)}))
   };
 }
 
@@ -138,7 +142,7 @@ async function profile(id, includeAnalytics=true) {
     membership.planStatus(id),membership.cosmetics(id),membership.appearance(id),
     query('SELECT count(*) AS referrals FROM referrals WHERE rewarded_room IS NOT NULL AND (inviter=? OR invitee=?)',id,id),
     includeAnalytics?analytics(id):Promise.resolve(null),
-    query('SELECT min(expires_at) AS expiry FROM point_grants WHERE player=? AND expires_at>? AND remaining>0',id,clock.now())
+    db.all('SELECT remaining,expires_at FROM point_grants WHERE player=? AND expires_at>? AND remaining>0 ORDER BY expires_at',id,clock.now())
   ]);
   const today = new Date(clock.now()).toISOString().slice(0,10);
   const yesterday = new Date(clock.now()-86400000).toISOString().slice(0,10);
@@ -157,7 +161,7 @@ async function profile(id, includeAnalytics=true) {
   return { ...player, streak, inventory, equipped, plan, cosmetics, appearance, now:clock.now(),
     admin:admins.has(id), adminAccess:adminAccess(id), prices:billingEnabled && !id.startsWith('guest:') ? paidPrices : {},
     referralBonus:Number(referral.referrals)*referralPoints,
-    ...(analysis||{}), pointExpiry:pointExpiry?.expiry?Number(pointExpiry.expiry):null,completed:Number(stats.completed),minutes:Number(stats.minutes),left:Number(stats.left),
+    ...(analysis||{}), pointGrants:pointExpiry.map(row=>({amount:Number(row.remaining),expiresAt:Number(row.expires_at)})),pointExpiry:pointExpiry[0]?.expires_at?Number(pointExpiry[0].expires_at):null,completed:Number(stats.completed),minutes:Number(stats.minutes),left:Number(stats.left),
     reliability: Number(stats.completed)+Number(stats.left) ? Math.round(100*Number(stats.completed)/(Number(stats.completed)+Number(stats.left))) : 100, history };
 }
 
@@ -398,6 +402,11 @@ io.on('connection', async(socket) => {
     if (!await membership.redeemCode(id,normalized)) fail('الكود مستخدم أو حسابك مفعّل بسبيشل.');
     await updatePlayer(id);
   });
+  action('startTrial',async()=>{
+    if(!telegramIdPattern.test(id))fail('التجربة المجانية متاحة لحسابات تليجرام فقط.');
+    if(!await membership.startTrial(id))fail('استخدمت التجربة المجانية سابقًا أو لديك عضوية فعّالة.');
+    await updatePlayer(id);
+  });
   let nextInviteAt = 0;
   socket.on('prepareInvite', async (_payload, ack) => {
     if (typeof ack !== 'function') return;
@@ -511,8 +520,7 @@ io.on('connection', async(socket) => {
   }
   const goalText = (value) => {
     const goal = String(value || '').trim().slice(0,160);
-    if (!goal) fail('اكتب هدفك أولًا.');
-    return goal;
+    return goal || 'جلسة تركيز';
   };
   action('create', async({ minutes, goal, pact }) => {
     if (!durations.includes(minutes)) fail('اختر مدة صالحة.');
@@ -567,6 +575,8 @@ io.on('connection', async(socket) => {
       room.phase = 'active';
       room.startsAt = clock.now()+3000;
       room.endAt = room.startsAt+room.minutes*minute;
+      const pairIds=room.members.map(member=>member.id).sort();
+      await run('INSERT INTO room_pairs(room,first_player,second_player,started_at) VALUES(?,?,?,?) ON CONFLICT(room) DO NOTHING',room.id,pairIds[0],pairIds[1],clock.now());
       for (const m of room.members) m.nextCheck = room.startsAt + (2+Math.random()*(room.minutes-4))*minute;
     }
     await send(room);
@@ -632,6 +642,7 @@ io.on('connection', async(socket) => {
     if (!Object.hasOwn(items,item) || item==='marathon') fail('العنصر غير موجود.');
     const [category,,cost] = items[item];
     const { points,inventory,cosmetics } = await profile(id);
+    if(specialOnly.has(item)&&(await membership.planStatus(id)).tier!=='special')fail('هذا الثيم حصري لعضوية سبيشل.');
     if ([1,2,4].includes(category) && await isPaid(id)) fail('العنصر متاح لك ضمن العضوية.');
     const total = cost*quantity;
     const stackable = category===0 || category===3;
@@ -651,6 +662,7 @@ io.on('connection', async(socket) => {
   action('equip', async({item}) => {
     if (!Object.hasOwn(items,item) || ![1,2,4].includes(items[item][0])) fail('العنصر غير متاح.');
     const { inventory,cosmetics } = await profile(id);
+    if(specialOnly.has(item)&&(await membership.planStatus(id)).tier!=='special')fail('هذا الثيم حصري لعضوية سبيشل.');
     const category = items[item][0];
     if (!await isPaid(id) && !(category === 2 ? cosmetics[item] : inventory[item])) fail('العنصر غير متاح.');
     const equipped = JSON.parse((await query('SELECT equipped FROM players WHERE id=?',id)).equipped);

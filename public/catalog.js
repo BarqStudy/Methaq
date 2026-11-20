@@ -14,7 +14,8 @@ export const specialties = {
   psychology: ['علم النفس','brain','#efa7d2','#c2a3fd'],
   chemistry: ['الكيمياء','flask-conical','#8bd7c8','#9aaeff'],
   languages: ['اللغات','languages','#ffc48c','#f399b6'],
-  accounting: ['المحاسبة','calculator','#a4d18b','#e8cf83']
+  accounting: ['المحاسبة','calculator','#a4d18b','#e8cf83'],
+  eternal: ['سبيشل الأبدي','gem','#f0c36c','#a890ff']
 };
 export const items = {
   shield: [0,'درع الطوارئ',100,'shield','يحمي سلسلة التزامك عند الانسحاب أو انقطاع الاتصال.'],
@@ -36,8 +37,9 @@ export const items = {
     [id,[4,name,95,icon,'أجواء '+name+' وزخارفه على كامل المنصة.']]))
 };
 
-export const rewards = { achievement:45, cooperation:15, steadfast:25, withdrawal:20 };
-export const successReward = rewards.achievement + rewards.cooperation;
+export const rewards = { achievement:45, steadfast:25, withdrawal:20 };
+export const successReward = rewards.achievement;
+export const specialOnly = new Set(['eternal']);
 
 export const glassRange = { min:12, max:46, defaultValue:24 };
 export const defaultAppearance = { mode:'light', palette:'emerald', transparency:glassRange.defaultValue };

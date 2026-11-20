@@ -16,6 +16,7 @@ export async function createMembership(db,now) {
     CREATE TABLE IF NOT EXISTS custom_palettes (player TEXT PRIMARY KEY,fill TEXT NOT NULL,first_color TEXT NOT NULL,second_color TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS membership_codes (code TEXT PRIMARY KEY,plan TEXT NOT NULL,created_by TEXT NOT NULL,created BIGINT NOT NULL,redeemed_by TEXT,redeemed_at BIGINT);
     CREATE TABLE IF NOT EXISTS membership_invoices (payload TEXT PRIMARY KEY,player TEXT NOT NULL,plan TEXT NOT NULL,amount INTEGER NOT NULL,created BIGINT NOT NULL,charge TEXT UNIQUE);
+    CREATE TABLE IF NOT EXISTS membership_trials (player TEXT PRIMARY KEY,started_at BIGINT NOT NULL,expires_at BIGINT NOT NULL);
   `);
   const grant=async(player,plan)=>{
     const existing=await db.query('SELECT pro_until,special FROM memberships WHERE player=?',player);
@@ -25,13 +26,19 @@ export async function createMembership(db,now) {
       pro_until=excluded.pro_until,special=CASE WHEN memberships.special>excluded.special THEN memberships.special ELSE excluded.special END`,player,until,Number(special));
   };
   const planStatus=async player=>{
-    const row=await db.query('SELECT pro_until,special FROM memberships WHERE player=?',player);
+    const [row,trial]=await Promise.all([db.query('SELECT pro_until,special FROM memberships WHERE player=?',player),db.query('SELECT started_at,expires_at FROM membership_trials WHERE player=?',player)]);
     const until=Number(row?.pro_until||0);
-    return Number(row?.special)?{tier:'special',until:null}:until>now()?{tier:'pro',until}:{tier:'free',until:null};
+    const trialUntil=Number(trial?.expires_at||0);
+    return Number(row?.special)?{tier:'special',until:null,trial:false}:until>now()?{tier:'pro',until,trial:false}:trialUntil>now()?{tier:'pro',until:trialUntil,trial:true}:{tier:'free',until:null,trial:false,trialAvailable:!trial};
   };
   const invoiceMatches=(record,{user,amount,currency})=>record&&record.player===String(user)&&Number(record.amount)===amount&&currency==='XTR';
   return {
     planStatus,grant,
+    async startTrial(player){
+      if((await planStatus(player)).tier!=='free')return false;
+      const saved=await db.run('INSERT INTO membership_trials(player,started_at,expires_at) VALUES(?,?,?) ON CONFLICT(player) DO NOTHING',player,now(),now()+3*day);
+      return Boolean(saved.changes);
+    },
     async revoke(player){await db.run('DELETE FROM memberships WHERE player=?',player);},
     async customPalette(player){return db.query('SELECT fill,first_color AS first,second_color AS second FROM custom_palettes WHERE player=?',player);},
     async setCustomPalette(player,{fill,first,second}){await db.run(`INSERT INTO custom_palettes(player,fill,first_color,second_color) VALUES(?,?,?,?) ON CONFLICT(player) DO UPDATE SET fill=excluded.fill,first_color=excluded.first_color,second_color=excluded.second_color`,player,fill,first,second);},

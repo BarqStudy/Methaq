@@ -121,8 +121,8 @@ test('runs Telegram invitations, admin changes, custom appearance, and referral 
   clock.now = () => started.endAt+1;
   const [hostResult] = await hostReward;
   const [recipientResult] = await recipientReward;
-  assert.equal(hostResult.points,160);
-  assert.equal(recipientResult.points,210);
+  assert.equal(hostResult.points,145);
+  assert.equal(recipientResult.points,195);
   assert.equal(hostResult.referralBonus,100);
   assert.equal(hostResult.referrals.rewarded,1);
   assert.equal(hostResult.weekly.reduce((sum,day)=>sum+day.minutes,0),25);
@@ -134,7 +134,7 @@ test('runs Telegram invitations, admin changes, custom appearance, and referral 
   assert.deepEqual(await command(recipient,'buy',{item:'horn',quantity:3}),{ok:true});
   const [purchased] = await inventory;
   assert.equal(purchased.inventory.horn,3);
-  assert.equal(purchased.points,105);
+  assert.equal(purchased.points,90);
   clock.now = Date.now;
 
   const banned = once(recipient,'banned');
