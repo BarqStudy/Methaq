@@ -60,7 +60,7 @@ const io = new Server(http, { pingInterval:4000, pingTimeout:4000 });
 const rooms = new Map();
 const memberships = new Map();
 const minute = 60000;
-const validDuration=value=>Number.isInteger(value)&&value>=25&&value<=180&&value%5===0;
+const validDuration=value=>Number.isInteger(value)&&value>=5&&value<=180&&value%5===0;
 const sessionBreak=value=>value<=25?5:value<=50?10:value<=90?12:value<=120?15:20;
 export const clock = { now: Date.now };
 const membership = await createMembership(db,() => clock.now());
@@ -547,7 +547,7 @@ io.on('connection', async(socket) => {
     return goal || 'جلسة تركيز';
   };
   action('create', async({ minutes, goal, pact }) => {
-    if (!validDuration(minutes)) fail('اختر مدة بين ٢٥ و١٨٠ دقيقة.');
+    if (!validDuration(minutes)) fail('اختر مدة بين ٥ و١٨٠ دقيقة بمضاعفات ٥.');
     if (minutes >= 120 && !await isPaid(id)) fail('جلسات ١٢٠ و١٨٠ دقيقة للمشتركين فقط.');
     let roomId;
     do { roomId = randomUUID().replaceAll('-',''); }
@@ -637,6 +637,7 @@ io.on('connection', async(socket) => {
     else if (item !== 'nudge') fail('تفاعل غير صالح.');
     p.lastSignal=clock.now();
     io.to('player:'+partner.id).emit('signal',item);
+    if(['zap','coffee','horn'].includes(item))io.to(room.id).emit('giftMoment',{item,from:p.name,to:partner.name});
     await saveRoom(room);await syncProfile();
   });
   action('requestPause', async() => {

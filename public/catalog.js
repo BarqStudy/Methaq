@@ -69,7 +69,7 @@ export const plans = {
   special: { title:'سبيشل', duration:'مدى الحياة', icon:'gem', color:'#f4c57c' }
 };
 
-export const durations = [25,50,90,120,180];
+export const durations = [5,25,50,90,120,180];
 export const referralPoints = 100;
 
 export const breakMinutes = {25:5, 50:10, 90:12, 120:15, 180:20};

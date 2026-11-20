@@ -43,7 +43,7 @@ document.querySelectorAll('i[data-icon]').forEach(i => i.style.setProperty('--ic
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num = (v) => Number(v || 0).toLocaleString('ar',{numberingSystem:'arab'});
 const remainingTime=(value,now=Date.now())=>{const minutes=Math.max(0,Math.ceil((value-now)/60000));const days=Math.floor(minutes/1440);const hours=Math.floor((minutes%1440)/60);const rest=minutes%60;return [days&&num(days)+' يوم',hours&&num(hours)+' ساعة',!days&&!hours&&num(rest)+' دقيقة'].filter(Boolean).join(' و ');};
-let room, socket, user, profile, bot, shortName, clockOffset = 0, chosen = 25, tab = 'home', category = 0, goal = '', pact = '', inviteDismissed = false;
+let room, socket, user, profile, bot, shortName, clockOffset = 0, chosen = 5, tab = 'home', category = 0, goal = '', pact = '', inviteDismissed = false;
 let viewKey, noticeTimeout, revisited, lastActivity = 0, lastCheck, audio, ambience;
 let preparingInvite = false, incomingInvite;
 let appearanceOpen = false, checkoutOpen = false, expiryTimer, glassPreview, glassRequest = 0;
@@ -104,8 +104,8 @@ const isInvite = () => invite && !inviteDismissed && (!room || revisited);
 const durationAllowed = (minutes) => minutes<120 || isPaid();
 const breakDuration=minutes=>minutes<=25?5:minutes<=50?10:minutes<=90?12:minutes<=120?15:20;
 const dialProgress = (minutes) => minutes<=25 ? Math.max(0,minutes) : Math.min(100,25+(minutes-25)*75/155);
-// The selectable 25–180 minute range is one clockwise revolution.
-const durationDialProgress = (minutes) => Math.max(0,Math.min(100,(Number(minutes)-25)*100/155));
+// The selectable 5–180 minute range is one clockwise revolution.
+const durationDialProgress = (minutes) => Math.max(0,Math.min(100,(Number(minutes)-5)*100/175));
 function decorationStyle() {
   const key = profile?.equipped?.decoration;
   return key ? 'data-decoration="'+key+'" style="--decoration:'+storeArt[key]+'"' : '';
@@ -129,7 +129,7 @@ function pendingInvite() {
 }
 const dialHandlePosition=progress=>{const angle=progress*3.6*Math.PI/180;return `left:${50+48*Math.sin(angle)}%;top:${50-48*Math.cos(angle)}%`;};
 function dial(text,label,progress=0,interactive=false) {
-  return `<div class="orbit"><div class="dial ${interactive?'interactive-dial':''}" style="--progress:${progress}" ${interactive?'role="slider" aria-label="مدة الجلسة" aria-valuemin="25" aria-valuemax="180" aria-valuenow="'+chosen+'" tabindex="0"':''}>${interactive?`<span class="dial-handle" style="${dialHandlePosition(progress)}" aria-hidden="true"></span>`:''}<div class="dial-content">${icon('lock-keyhole')}<strong class="digits" id="digits">${text}</strong><small id="dial-label">${label}</small></div></div>
+  return `<div class="orbit"><div class="dial ${interactive?'interactive-dial':''}" style="--progress:${progress}" ${interactive?'role="slider" aria-label="مدة الجلسة" aria-valuemin="5" aria-valuemax="180" aria-valuenow="'+chosen+'" tabindex="0"':''}>${interactive?`<span class="dial-handle" style="${dialHandlePosition(progress)}" aria-hidden="true"></span>`:''}<div class="dial-content">${icon('lock-keyhole')}<strong class="digits" id="digits">${text}</strong><small id="dial-label">${label}</small></div></div>
   <span class="satellite one">${icon('user-round')}</span><span class="satellite two">${icon('user-round')}</span></div>`;
 }
 function home() {
@@ -177,10 +177,11 @@ function active() {
   <div class="room-code-hero"><span>${icon('hash')} رمز الغرفة</span><strong dir="ltr">${esc(room.code)}</strong>${button('copyCode','نسخ','plain','copy')}</div>
   <section class="panel preview active-dial" ${decorationStyle()}>${decorationIcon()}${dial('00:00','الوقت المتبقي')}</section>${pair(true)}
   ${request ? '<section class="panel actions">'+(request.id===user.id?'بانتظار موافقة شريكك على الاستراحة.':'شريكك يطلب استراحة لمدة ٣ دقائق. '+button('answerPause','أوافق','primary','','yes')+button('answerPause','متابعة الجلسة','secondary','','no'))+'</section>':''}
-  <section class="panel stack"><div class="actions" aria-label="أصوات الخلفية">${[['rain','مطر'],['cafe','مقهى'],['white','ضوضاء بيضاء']].map(([k,v])=>button('sound',v,ambience===k?'primary':'secondary','volume-2',k)).join('')}</div>
-  <div class="actions">${partner?.idle?button('signal','إرسال تنبيه اهتزاز','secondary','zap','nudge'):''}
-  ${inventory.zap?button('signal','صعقة التركيز','secondary','zap','zap'):''}${inventory.coffee?button('signal','إهداء كوب قهوة','secondary','coffee','coffee'):''}
-  ${inventory.pause || (isPaid() && !room.premiumPauseUsed)?button('requestPause','استراحة محارب','secondary','timer-reset'):''}${button('withdraw','انسحاب','plain','log-out')}</div></section></div></div>`;
+  <section class="panel focus-tools stack">
+    <div class="tool-section sound-section"><div class="tool-heading">${icon('volume-2')}<div><h3>أجواء هادئة</h3><p>صوت خافت يساعدك على التركيز</p></div></div><div class="sound-grid" aria-label="أصوات الخلفية">${[['rain','مطر هادئ','cloud-rain'],['cafe','مقهى هادئ','coffee'],['white','ضوضاء ناعمة','waves']].map(([k,v,symbol])=>button('sound',v,ambience===k?'primary sound-choice active':'secondary sound-choice',symbol,k)).join('')}</div></div>
+    ${(partner?.idle||inventory.zap||inventory.coffee||inventory.pause||(isPaid()&&!room.premiumPauseUsed))?`<div class="tool-section gift-section"><div class="tool-heading">${icon('gift')}<div><h3>تفاعل مع شريكك</h3><p>لفتة صغيرة تصل إليه فورًا</p></div></div><div class="gift-grid">${partner?.idle?button('signal','تنبيه لطيف','secondary gift-action','zap','nudge'):''}${inventory.zap?button('signal','صعقة التركيز','secondary gift-action','zap','zap'):''}${inventory.coffee?button('signal','إهداء قهوة','secondary gift-action','coffee','coffee'):''}${inventory.pause||(isPaid()&&!room.premiumPauseUsed)?button('requestPause','استراحة محارب','secondary gift-action','timer-reset'):''}</div></div>`:''}
+    <div class="withdraw-section"><div><strong>إنهاء الجلسة</strong><small>سيُسجّل الانسحاب في حسابك</small></div>${button('withdraw','انسحاب','danger withdraw-action','log-out')}</div>
+  </section></div></div>`;
 }
 const labels = { success:'جلسة مكتملة', steadfast:'صمود الشريك', left:'انسحاب' };
 function outcome() {
@@ -744,13 +745,31 @@ function sound(type, toggle=true) {
   const source = audio.createBufferSource();
   source.buffer = buffer;
   source.loop=true;
-  source.connect(audio.destination);
+  const filter = audio.createBiquadFilter();
+  filter.type='lowpass';
+  filter.frequency.value=1800;
+  filter.Q.value=.25;
+  const gain = audio.createGain();
+  gain.gain.value=.045;
+  source.connect(filter).connect(gain).connect(audio.destination);
   source.start();
   audio.resume().catch(()=>toast('تعذر تشغيل الصوت.'));
   ambience = type;
   render(true);
 }
 function stopSound() { if (audio) audio.close(); audio=null; ambience=null; }
+function showGiftMoment(data={}) {
+  const labels={coffee:['coffee','كوب قهوة'],zap:['zap','صعقة تركيز'],horn:['sparkles','بوق الفوز']};
+  const [symbol,label]=labels[data.item]||['gift','هدية'];
+  document.querySelector('.gift-moment')?.remove();
+  const moment=document.createElement('div');
+  moment.className='gift-moment';
+  moment.setAttribute('role','status');
+  moment.innerHTML=`<div class="gift-confetti" aria-hidden="true">${'<i></i>'.repeat(12)}</div><div class="gift-orbit">${icon(symbol)}</div><small>${esc(data.from)} أهدى ${esc(data.to)}</small><strong>${label}</strong><span>وصلت اللفتة بنجاح</span>`;
+  document.body.append(moment);
+  vibe();
+  setTimeout(()=>{moment.classList.add('leaving');setTimeout(()=>moment.remove(),450);},3400);
+}
 function inviteUrl() {
   return roomInviteUrl({ bot, shortName, code:room.id, guestOrigin:tg?.initData ? null : location.origin });
 }
@@ -902,11 +921,21 @@ page.addEventListener('pointerdown',event=>{
   if(!dialControl)return;
   event.preventDefault();dialControl.setPointerCapture?.(event.pointerId);
   let candidate=chosen;
-  const select=pointer=>{
+  let dragAngle=durationDialProgress(chosen)*3.6;
+  const pointerAngle=pointer=>{
     const rect=dialControl.getBoundingClientRect();
     let angle=Math.atan2(pointer.clientY-(rect.top+rect.height/2),pointer.clientX-(rect.left+rect.width/2))*180/Math.PI+90;
-    if(angle<0)angle+=360;
-    candidate=Math.max(25,Math.min(180,Math.round((25+angle/360*155)/5)*5));
+    return angle<0?angle+360:angle;
+  };
+  let lastPointerAngle=pointerAngle(event);
+  const select=pointer=>{
+    const angle=pointerAngle(pointer);
+    let delta=angle-lastPointerAngle;
+    if(delta>180)delta-=360;
+    if(delta< -180)delta+=360;
+    dragAngle=Math.max(0,Math.min(360,dragAngle+delta));
+    lastPointerAngle=angle;
+    candidate=Math.max(5,Math.min(180,Math.round((5+dragAngle/360*175)/5)*5));
     dialControl.style.setProperty('--progress',durationDialProgress(candidate));
     const handle=dialControl.querySelector('.dial-handle');if(handle)handle.style.cssText=dialHandlePosition(durationDialProgress(candidate));
     dialControl.setAttribute('aria-valuenow',candidate);
@@ -918,7 +947,7 @@ page.addEventListener('pointerdown',event=>{
     if(candidate>=120&&!isPaid()){render(true);return premiumDuration(candidate);}
     chosen=candidate;render(true);tg?.HapticFeedback?.selectionChanged();
   };
-  select(event);window.addEventListener('pointermove',move);window.addEventListener('pointerup',end,{once:true});
+  window.addEventListener('pointermove',move);window.addEventListener('pointerup',end,{once:true});
 });
 page.addEventListener('input',event=>{
   if (event.target.name==='goal') goal=event.target.value;
@@ -1068,6 +1097,6 @@ socket.on('directInvite', data=>{
   }
 });
 socket.on('signal',kind=>{
-  vibe();
-  if (kind!=='check') toast({nudge:'شريكك يذكّرك بالتركيز',zap:'صعقة تركيز من شريكك',coffee:'أهدى لك شريكك كوب قهوة ☕',horn:'🎉 شريكك يحتفل بإتمام الميثاق'}[kind] || '');
+  if(kind==='nudge'){vibe();toast('شريكك يذكّرك بالتركيز');}
 });
+socket.on('giftMoment',showGiftMoment);

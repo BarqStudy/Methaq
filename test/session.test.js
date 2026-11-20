@@ -42,6 +42,11 @@ test('two-person pact synchronizes and settles rewards, purchases, and withdrawa
   assert.ok((await command(a,'create',{minutes:180,goal:'مشروع'})).error);
   const b = await guest('ريم');
   const c = await guest('نور');
+  assert.ok((await command(a,'create',{minutes:6,goal:'مدة غير صالحة'})).error);
+  const shortRoom = waitFor(a,'room',r=>r.phase==='lobby'&&r.minutes===5);
+  assert.deepEqual(await command(a,'create',{minutes:5,goal:'مراجعة سريعة'}),{ok:true});
+  assert.equal((await shortRoom).minutes,5);
+  assert.deepEqual(await command(a,'leaveLobby'),{ok:true});
   async function begin() {
     const created = waitFor(a,'room',r=>r.phase==='lobby' && r.members.length===1);
     assert.deepEqual(await command(a,'create',{minutes:25,goal:'مراجعة الفصل'}),{ok:true});
@@ -77,8 +82,12 @@ test('two-person pact synchronizes and settles rewards, purchases, and withdrawa
   const second = await begin();
   offset += second.startsAt-clock.now()+1;
   const gift = once(b,'signal');
+  const giftMomentA = once(a,'giftMoment');
+  const giftMomentB = once(b,'giftMoment');
   assert.deepEqual(await command(a,'signal',{item:'coffee'}),{ok:true});
   assert.deepEqual(await gift,['coffee']);
+  assert.deepEqual(await giftMomentA,[{item:'coffee',from:'أحمد',to:'ريم'}]);
+  assert.deepEqual(await giftMomentB,[{item:'coffee',from:'أحمد',to:'ريم'}]);
   const leaving = waitFor(a,'room',r=>r.members[0].exitAt);
   assert.deepEqual(await command(a,'presence',{hidden:true}),{ok:true});
   const state = await leaving;
