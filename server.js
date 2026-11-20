@@ -95,29 +95,30 @@ async function referralCode(id) {
 async function analytics(id) {
   const now = clock.now();
   const days = Array.from({length:7},(_,i)=>new Date(now-(6-i)*86400000).toISOString().slice(0,10));
-  const activity = await db.all(`SELECT substr(date,1,10) AS day, sum(minutes) AS minutes
-    FROM results WHERE player=? AND status='success' AND date>=? GROUP BY day`,id,days[0]);
-  const outbound = await query('SELECT count(*) AS invited,count(rewarded_room) AS rewarded FROM referrals WHERE inviter=?',id);
+  const [activity,outbound,code,linked]=await Promise.all([
+    db.all(`SELECT substr(date,1,10) AS day, sum(minutes) AS minutes FROM results WHERE player=? AND status='success' AND date>=? GROUP BY day`,id,days[0]),
+    query('SELECT count(*) AS invited,count(rewarded_room) AS rewarded FROM referrals WHERE inviter=?',id),
+    query('SELECT code FROM referral_codes WHERE player=?',id),
+    query('SELECT 1 FROM referrals WHERE invitee=?',id)
+  ]);
   return {
     weekly: days.map(day=>({day,minutes:Number(activity.find(entry=>entry.day===day)?.minutes || 0)})),
-    referrals: { invited:Number(outbound.invited),rewarded:Number(outbound.rewarded),code:(await query('SELECT code FROM referral_codes WHERE player=?',id))?.code,
-      linked:Boolean(await query('SELECT 1 FROM referrals WHERE invitee=?',id)) }
+    referrals: { invited:Number(outbound.invited),rewarded:Number(outbound.rewarded),code:code?.code,linked:Boolean(linked) }
   };
 }
 
 async function profile(id, includeAnalytics=true) {
-  const player = await query('SELECT * FROM players WHERE id=?', id);
-  const stats = await query(`SELECT count(*) FILTER (WHERE status='success') AS completed,
-    coalesce(sum(minutes) FILTER (WHERE status='success'),0) AS minutes,
-    count(*) FILTER (WHERE status='left' AND forgiven=0) AS left
-    FROM results WHERE player=?`, id);
-  const history = await db.all('SELECT * FROM results WHERE player=? ORDER BY date DESC LIMIT 20',id);
+  const [player,stats,history,plan,cosmetics,appearance,referral,analysis]=await Promise.all([
+    query('SELECT * FROM players WHERE id=?',id),
+    query(`SELECT count(*) FILTER (WHERE status='success') AS completed,coalesce(sum(minutes) FILTER (WHERE status='success'),0) AS minutes,count(*) FILTER (WHERE status='left' AND forgiven=0) AS left FROM results WHERE player=?`,id),
+    db.all('SELECT * FROM results WHERE player=? ORDER BY date DESC LIMIT 20',id),
+    membership.planStatus(id),membership.cosmetics(id),membership.appearance(id),
+    query('SELECT count(*) AS referrals FROM referrals WHERE rewarded_room IS NOT NULL AND (inviter=? OR invitee=?)',id,id),
+    includeAnalytics?analytics(id):Promise.resolve(null)
+  ]);
   const today = new Date(clock.now()).toISOString().slice(0,10);
   const yesterday = new Date(clock.now()-86400000).toISOString().slice(0,10);
   const streak = [today,yesterday].includes(player.last_day) ? player.streak : 0;
-  const plan = await membership.planStatus(id);
-  const cosmetics = await membership.cosmetics(id);
-  const appearance = await membership.appearance(id);
   if (plan.tier!=='free') appearance.custom = await membership.customPalette(id);
   const inventory = JSON.parse(player.inventory);
   const equipped = JSON.parse(player.equipped);
@@ -131,8 +132,8 @@ async function profile(id, includeAnalytics=true) {
   if (equipped.title && equipped.frame) delete equipped.frame;
   return { ...player, streak, inventory, equipped, plan, cosmetics, appearance, now:clock.now(),
     admin:admins.has(id), adminAccess:adminAccess(id), prices:billingEnabled && !id.startsWith('guest:') ? paidPrices : {},
-    referralBonus:Number((await query('SELECT count(*) AS referrals FROM referrals WHERE rewarded_room IS NOT NULL AND (inviter=? OR invitee=?)',id,id)).referrals)*referralPoints,
-    ...(includeAnalytics ? await analytics(id) : {}), completed:Number(stats.completed),minutes:Number(stats.minutes),left:Number(stats.left),
+    referralBonus:Number(referral.referrals)*referralPoints,
+    ...(analysis||{}), completed:Number(stats.completed),minutes:Number(stats.minutes),left:Number(stats.left),
     reliability: Number(stats.completed)+Number(stats.left) ? Math.round(100*Number(stats.completed)/(Number(stats.completed)+Number(stats.left))) : 100, history };
 }
 
@@ -162,14 +163,16 @@ function authenticate(auth = {}) {
   fail('افتح ميثاق التركيز من تطبيق تليجرام.');
 }
 
-async function saveRoom(room) {
+const roomSaveTimes=new WeakMap();
+async function saveRoom(room,force=false) {
+  if(!force&&clock.now()-(roomSaveTimes.get(room)||0)<5000)return;
+  roomSaveTimes.set(room,clock.now());
   await run(`INSERT INTO live_rooms(id,state,updated_at) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET state=excluded.state,updated_at=excluded.updated_at`,room.id,JSON.stringify(room),clock.now());
 }
 
 async function send(room) {
-  await saveRoom(room);
-  const members=await Promise.all(room.members.map(async member=>({...member,equipped:(await profile(member.id,false)).equipped})));
-  io.to(room.id).emit('room',{...room,now:clock.now(),members});
+  io.to(room.id).emit('room',{...room,now:clock.now(),members:room.members.map(member=>({...member,equipped:member.equipped||{}}))});
+  saveRoom(room).catch(error=>console.error('تعذّر حفظ الغرفة.',error.message));
 }
 
 async function finish(room, leaving) {
@@ -200,7 +203,7 @@ async function finish(room, leaving) {
   room.finished = now;
   if (!leaving) room.breakUntil = now+breakMinutes[room.minutes]*minute;
   for (const player of new Set([...room.members.map(p=>p.id),...rewarded])) io.to('player:'+player).emit('profile',await profile(player));
-  await send(room);
+  await saveRoom(room,true);await send(room);
 }
 
 async function tick(room, now) {
@@ -256,7 +259,7 @@ async function leaveWaitingRoom(room, id) {
 }
 
 for(const row of await db.all('SELECT state FROM live_rooms')){
-  try{const room=JSON.parse(row.state);if(room?.id&&room?.members){for(const member of room.members){member.exitAt=null;member.checkUntil=null;member.activity=clock.now();memberships.set(member.id,room.id);}rooms.set(room.id,room);}}catch{/* Ignore corrupt room snapshots. */}
+  try{const room=JSON.parse(row.state);if(room?.id&&room?.members){await Promise.all(room.members.map(async member=>{member.exitAt=null;member.checkUntil=null;member.activity=clock.now();member.equipped=JSON.parse((await query('SELECT equipped FROM players WHERE id=?',member.id))?.equipped||'{}');memberships.set(member.id,room.id);}));rooms.set(room.id,room);}}catch{/* Ignore corrupt room snapshots. */}
 }
 
 io.use(async(socket,next) => {
@@ -461,7 +464,8 @@ io.on('connection', async(socket) => {
     const old = current();
     if (old && old.phase !== 'outcome') fail('أكمل غرفتك الحالية أولًا.');
     if (old) io.in(playerRoom).socketsLeave(old.id);
-    room.members.push({ id, name:user.name, photo:user.photo, goal, ready:false, activity:clock.now() });
+    const equipped=JSON.parse((await query('SELECT equipped FROM players WHERE id=?',id))?.equipped||'{}');
+    room.members.push({ id, name:user.name, photo:user.photo, goal, ready:false, activity:clock.now(),equipped });
     memberships.set(id,room.id);
     io.in(playerRoom).socketsJoin(room.id);
     await send(room);
@@ -617,6 +621,7 @@ io.on('connection', async(socket) => {
       equipped[slot]=item;
     }
     await run('UPDATE players SET equipped=? WHERE id=?',JSON.stringify(equipped),id);
+    const room=current();const member=room?.members.find(entry=>entry.id===id);if(member)member.equipped={...equipped};
     await syncProfile();
     if (current()) await send(current());
   });
