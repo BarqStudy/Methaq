@@ -129,7 +129,7 @@ function pendingInvite() {
 }
 const dialHandlePosition=progress=>{const angle=progress*3.6*Math.PI/180;return `left:${50+48*Math.sin(angle)}%;top:${50-48*Math.cos(angle)}%`;};
 function dial(text,label,progress=0,interactive=false) {
-  return `<div class="orbit"><div class="dial ${interactive?'interactive-dial':''}" style="--progress:${progress}" ${interactive?'role="slider" aria-label="مدة الجلسة" aria-valuemin="5" aria-valuemax="180" aria-valuenow="'+chosen+'" tabindex="0"':''}>${interactive?`<span class="dial-handle" style="${dialHandlePosition(progress)}" aria-hidden="true"></span>`:''}<div class="dial-content">${icon('lock-keyhole')}<strong class="digits" id="digits">${text}</strong><small id="dial-label">${label}</small></div></div>
+  return `<div class="orbit"><div class="dial ${interactive?'interactive-dial':''}" style="--progress:${progress}" ${interactive?'role="slider" aria-label="مدة الجلسة" aria-valuemin="5" aria-valuemax="180" aria-valuenow="'+chosen+'" tabindex="0"':''}>${interactive?`<span class="dial-handle" style="${dialHandlePosition(progress)}" aria-hidden="true"></span>`:''}<div class="dial-content">${icon('lock-keyhole')}<strong class="digits" id="digits">${text}</strong>${label?`<small id="dial-label">${label}</small>`:''}</div></div>
   <span class="satellite one">${icon('user-round')}</span><span class="satellite two">${icon('user-round')}</span></div>`;
 }
 function home() {
@@ -141,7 +141,7 @@ function home() {
     <section class="panel preview home-timer" ${decorationStyle()} aria-labelledby="focus-timer-title">
       <div class="preview-top"><h1 id="focus-timer-title">مؤقت التركيز</h1><span class="tag"><span class="dot"></span> جلسة ثنائية</span></div>
       ${decorationIcon()}
-      ${dial(chosen+':00','اسحب الدائرة مع عقارب الساعة',durationDialProgress(chosen),true)}
+      ${dial(chosen+':00','',durationDialProgress(chosen),true)}
       <p class="preview-note">${icon('users')} يبدأ المؤقت بعد موافقة الطرفين</p>
     </section>
     <div class="durations" role="group" aria-label="مدة الجلسة">${durations.map(m=>`<button type="button" class="duration ${m===chosen?'on':''}" data-action="duration" data-value="${m}" aria-pressed="${m===chosen}"><strong>${num(m)}</strong> دقيقة${!durationAllowed(m)?icon('lock-keyhole'):''}</button>`).join('')}</div>`}
