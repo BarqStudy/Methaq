@@ -854,6 +854,7 @@ document.addEventListener('click',event=>{
   if (action==='duration') {
     if (!durationAllowed(+value)) return premiumDuration(+value);
     chosen=+value; render(true);
+    requestAnimationFrame(()=>page.querySelector('.duration.on')?.scrollIntoView({behavior:'smooth',block:'nearest',inline:'center'}));
   } else if (action==='appearanceMenu') openAppearance();
   else if (action==='mode') changeAppearance({mode:value});
   else if (action==='palette') {
