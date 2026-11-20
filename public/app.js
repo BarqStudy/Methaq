@@ -114,8 +114,8 @@ function decorationIcon() {
   return key ? '<span class="decoration-art" aria-hidden="true">'+icon(items[key][3])+'</span>' : '';
 }
 function membershipMark(tier){
-  if(tier==='pro')return `<span class="member-mark pro-mark" title="عضو برو" aria-label="عضو برو"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 2.7l3.2 3 4.4-.4 1.8 4 4 1.8-.4 4.4 3 3.2-3 3.2.4 4.4-4 1.8-1.8 4-4.4-.4-3.2 3-3.2-3-4.4.4-1.8-4-4-1.8.4-4.4-3-3.2 3 3.2-3 4.4.4 1.8 4 4 1.8-.4 4.4z"/><path class="member-glyph" d="M10.5 13.2l3.2 2.6 2.3-5 2.3 5 3.2-2.6-1.2 7.2h-8.6z"/></svg></span>`;
-  if(tier==='special')return `<span class="member-mark special-mark" title="عضو سبيشل" aria-label="عضو سبيشل"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 1.8l4.1 5.5 6.7-.7-.7 6.7 5.5 4.1-5.5 4.1.7 6.7-6.7-.7-4.1 5.5-4.1-5.5-6.7.7.7-6.7-5.5-4.1 5.5-4.1-.7-6.7 6.7.7z"/><path class="member-glyph" d="M10 13l6-5 6 5-6 9z"/></svg></span>`;
+  if(tier==='pro')return `<span class="member-mark pro-mark" title="عضو برو" aria-label="عضو برو"><svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14"/><path class="member-stroke" d="M9.5 16.5l4.2 4.1 8.9-9.5"/></svg></span>`;
+  if(tier==='special')return `<span class="member-mark special-mark" title="عضو سبيشل" aria-label="عضو سبيشل"><svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14"/><path class="member-glyph" d="M8.8 13.3L16 7.8l7.2 5.5L16 24.2z"/><path class="member-stroke" d="M8.8 13.3h14.4M12.5 13.3L16 24.2l3.5-10.9M12.5 13.3L16 7.8l3.5 5.5"/></svg></span>`;
   return '';
 }
 function studentProfile() {
@@ -151,7 +151,7 @@ function home() {
     <section class="duration-picker" aria-label="اختيار سريع للمدة"><div class="duration-picker-head"><span>${icon('clock-3')} اختيار سريع</span><small>بالدقائق</small></div><div class="durations" role="group" aria-label="مدة الجلسة">${durations.map(m=>`<button type="button" class="duration ${m===chosen?'on':''}" data-action="duration" data-value="${m}" aria-pressed="${m===chosen}"><strong>${num(m)}</strong><span>دقيقة</span>${!durationAllowed(m)?icon('lock-keyhole'):''}</button>`).join('')}</div></section>
     <form class="panel form-main" id="create-session-form"><div class="panel-title"><span class="tile-icon">${icon('plus')}</span><div><h2>إنشاء غرفة</h2></div></div>
     <label class="field">هدف الجلسة <small class="optional">اختياري</small><input maxlength="160" name="goal" placeholder="ماذا ستنجز في هذه الجلسة؟" value="${esc(goal)}"></label>
-    <button class="primary wide create-room-cta"><span class="cta-cube" aria-hidden="true">${icon('plus')}</span><span>ابدأ ميثاقك وأنشئ غرفة</span><small>وادعُ شريكك للتركيز معًا</small></button></form></div>`;
+    <button class="primary wide create-room-cta"><span class="create-plus" aria-hidden="true">${icon('plus')}</span><span>ابدأ ميثاقك وأنشئ غرفة</span><small>وادعُ شريكك للتركيز معًا</small></button></form></div>`;
 }
 function roomsPage(){
   const joining=isInvite();
