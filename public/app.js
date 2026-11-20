@@ -1087,6 +1087,9 @@ page.addEventListener('submit',event=>{
     if(event.target.id==='direct-invite-form'){emit('directInvite',{handle:form.get('handle')});return;}
     const code=form.get('code').trim().toUpperCase();
     if (!/^[A-F0-9]{8}$/.test(code)) return toast('اكتب رمز الغرفة المكوّن من ٨ حروف وأرقام.');
+    if(room?.phase==='lobby'&&room.code===code&&room.members.some(member=>member.id===user?.id)){
+      tab='home';inviteDismissed=true;render(true);window.scrollTo({top:0,behavior:'instant'});toast('هذه غرفتك، أعدناك إلى غرفة الانتظار.');return;
+    }
     invite=code;inviteDismissed=false;emit('join',{code,goal:''});
     return;
   }

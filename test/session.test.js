@@ -49,7 +49,9 @@ test('two-person pact synchronizes and settles rewards, purchases, and withdrawa
   assert.ok((await command(a,'create',{minutes:6,goal:'مدة غير صالحة'})).error);
   const shortRoom = waitFor(a,'room',r=>r.phase==='lobby'&&r.minutes===5);
   assert.deepEqual(await command(a,'create',{minutes:5,goal:'مراجعة سريعة'}),{ok:true});
-  assert.equal((await shortRoom).minutes,5);
+  const shortState=await shortRoom;
+  assert.equal(shortState.minutes,5);
+  assert.deepEqual(await command(a,'join',{code:shortState.code}),{ok:true,own:true});
   assert.deepEqual(await command(a,'leaveLobby'),{ok:true});
   async function begin() {
     const created = waitFor(a,'room',r=>r.phase==='lobby' && r.members.length===1);

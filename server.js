@@ -562,6 +562,9 @@ io.on('connection', async(socket) => {
     const normalized = typeof code==='string' ? code.trim().toUpperCase() : '';
     const room = rooms.get(normalized.toLowerCase()) || (/^[A-F0-9]{8}$/.test(normalized)
       ? [...rooms.values()].find(room=>room.code===normalized) : null);
+    if(room?.members.some(member=>member.id===id)){
+      memberships.set(id,room.id);io.in(playerRoom).socketsJoin(room.id);await send(room);return {own:true};
+    }
     if (!room || room.phase !== 'lobby' || room.members.length >= 2) fail('الغرفة ممتلئة أو انتهت صلاحية الدعوة.');
     const inviter = room.members[0].id;
     await enter(room,goalText(goal));
