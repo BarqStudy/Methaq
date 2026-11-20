@@ -298,10 +298,11 @@ io.use(async(socket,next) => {
 io.on('connection', async(socket) => {
   const user = socket.data.user;
   const { id } = user;
-  await run('INSERT INTO players(id) VALUES(?) ON CONFLICT(id) DO NOTHING', id);
-  if (telegramIdPattern.test(id)) await run(`INSERT INTO telegram_students(id,name,handle) VALUES(?,?,?)
-    ON CONFLICT(id) DO UPDATE SET name=excluded.name,handle=excluded.handle`,id,user.name,user.handle || null);
-  if (telegramIdPattern.test(id)) await referralCode(id);
+  await Promise.all([
+    run('INSERT INTO players(id) VALUES(?) ON CONFLICT(id) DO NOTHING',id),
+    telegramIdPattern.test(id)?run(`INSERT INTO telegram_students(id,name,handle) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,handle=excluded.handle`,id,user.name,user.handle||null):Promise.resolve(),
+    telegramIdPattern.test(id)?referralCode(id):Promise.resolve()
+  ]);
   const playerRoom = 'player:'+id;
   socket.join(playerRoom);
   const current = () => rooms.get(memberships.get(id));
@@ -313,7 +314,9 @@ io.on('connection', async(socket) => {
   }
   const syncProfile=async()=>io.to(playerRoom).emit('profile',await profile(id));
   const isPaid=async player=>(await membership.planStatus(player)).tier!=='free';
-  socket.emit('hello',{user,profile:await profile(id),bot:BOT_USERNAME,shortName:APP_SHORT_NAME});
+  const initialProfile=await profile(id,false);
+  socket.emit('hello',{user,profile:initialProfile,bot:BOT_USERNAME,shortName:APP_SHORT_NAME});
+  analytics(id).then(details=>socket.connected&&socket.emit('profile',{...initialProfile,...details,now:clock.now()})).catch(error=>console.error('تعذّر تحميل تفاصيل الحساب.',error.message));
 
   function action(event, fn) {
     socket.on(event, async(payload, ack) => {

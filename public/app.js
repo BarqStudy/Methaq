@@ -50,7 +50,7 @@ const isPaid = () => ['pro','special'].includes(profile?.plan?.tier);
 let purchaseBusy = false;
 let activityDay;
 let adminData, adminSearch = '', adminBusy = false, blocked = false;
-let appearanceRequest = 0;
+let appearanceRequest = 0, appearanceSaveTimer, visualUpdatePending = false;
 const guestId = sessionStorage.getItem('methaq-guest') || Array.from(crypto.getRandomValues(new Uint8Array(18)), b=>b.toString(16).padStart(2,'0')).join('');
 sessionStorage.setItem('methaq-guest',guestId);
 const name = new URLSearchParams(location.search).get('name') || 'ضيف ميثاق';
@@ -397,6 +397,7 @@ function changeAppearance(next) {
   if(!profile?.appearance)return;
   const previous={...profile.appearance};
   const request=++appearanceRequest;
+  visualUpdatePending=true;
   profile.appearance={...profile.appearance,...next};
   applyAppearance();
   if(appearanceOpen&&dialog.open){
@@ -404,12 +405,17 @@ function changeAppearance(next) {
     dialog.querySelectorAll('[data-action="palette"]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.value===profile.appearance.palette)));
   }
   tg?.HapticFeedback?.selectionChanged();
-  socket.timeout(5000).emitWithAck('appearance',{mode:profile.appearance.mode,palette:profile.appearance.palette}).then(response=>{
-    if(response.error)throw new Error(response.error);
-  }).catch(error=>{
-    if(request===appearanceRequest){profile.appearance=previous;applyAppearance();openAppearance();}
-    toast(error.message||'تعذّر حفظ المظهر.');
-  });
+  clearTimeout(appearanceSaveTimer);
+  appearanceSaveTimer=setTimeout(async()=>{
+    try{
+      const response=await socket.timeout(5000).emitWithAck('appearance',{mode:profile.appearance.mode,palette:profile.appearance.palette});
+      if(response.error)throw new Error(response.error);
+      if(request===appearanceRequest)visualUpdatePending=false;
+    }catch(error){
+      if(request===appearanceRequest){visualUpdatePending=false;profile.appearance=previous;applyAppearance();openAppearance();}
+      toast(error.message||'تعذّر حفظ المظهر.');
+    }
+  },120);
 }
 async function adminRequest(event,payload={}) {
   if (!profile?.admin || !socket?.connected || adminBusy) return;
@@ -486,14 +492,32 @@ dialog.addEventListener('submit',async event=>{
   event.preventDefault();
   const custom=readCustomForm(event.target);
   const previous={...profile.appearance};
+  visualUpdatePending=true;
   profile.appearance={...profile.appearance,palette:'custom',custom};
   applyAppearance();
   try{
     const response=await socket.timeout(5000).emitWithAck('customPalette',custom);
     if(response.error)throw new Error(response.error);
+    visualUpdatePending=false;
     toast('تم حفظ ألوانك.');
-  }catch(error){profile.appearance=previous;applyAppearance();toast(error.message||'تعذّر حفظ الألوان.');}
+  }catch(error){visualUpdatePending=false;profile.appearance=previous;applyAppearance();toast(error.message||'تعذّر حفظ الألوان.');}
 });
+
+async function toggleEquip(item) {
+  if(!profile?.equipped||!items[item])return;
+  const category=items[item][0];
+  const slot=category===4?'decoration':category===1?'theme':item==='frame'?'frame':'title';
+  const previous={...profile.equipped};
+  profile.equipped={...profile.equipped,[slot]:profile.equipped[slot]===item?null:item};
+  if(category===2&&profile.equipped[slot])delete profile.equipped[slot==='title'?'frame':'title'];
+  visualUpdatePending=true;
+  applyAppearance();render(true);tg?.HapticFeedback?.selectionChanged();
+  try{
+    const response=await socket.timeout(5000).emitWithAck('equip',{item});
+    if(response.error)throw new Error(response.error);
+    visualUpdatePending=false;toast('تم تفعيل الثيم.');
+  }catch(error){visualUpdatePending=false;profile.equipped=previous;applyAppearance();render(true);toast(error.message||'تعذّر تفعيل الثيم.');}
+}
 
 function openAppearance() {
   if (dialog.open && !appearanceOpen) return;
@@ -795,6 +819,7 @@ document.addEventListener('click',event=>{
     if (palettes[value]?.premium && !isPaid()) return toast('هذا اللون متاح مع برو وسبيشل.');
     changeAppearance({palette:value});
   }
+  else if(action==='equip')toggleEquip(value);
   else if (action==='seePlans') {
     if (room?.phase==='active') return toast('الترقية متاحة بعد انتهاء جلسة التركيز.');
     if (dialog.open) dialog.close();
@@ -904,6 +929,11 @@ for (const event of ['pointerdown','keydown','scroll']) document.addEventListene
     lastActivity=Date.now();socket.emit('activity',{},()=>{});
   }
 },{passive:true});
+const telegramUser=tg?.initDataUnsafe?.user;
+if(telegramUser){
+  user={id:String(telegramUser.id),name:[telegramUser.first_name,telegramUser.last_name].filter(Boolean).join(' '),photo:telegramUser.photo_url,handle:telegramUser.username?.toLowerCase()};
+  try{profile=JSON.parse(localStorage.getItem('methaq.profile.'+user.id)||'null');}catch{/* Ignore an invalid local snapshot. */}
+}
 render();
 socket = window.io({auth:{initData:tg?.initData,guest:guestId,name}});
 function showBan(message) {
@@ -923,12 +953,20 @@ socket.on('disconnect',()=>{ if (!blocked) toast('انقطع الاتصال. ج�
 function updateProfile(data) {
   const bonus = profile ? data.referralBonus - profile.referralBonus : 0;
   if (bonus>0) toast('وصلتك '+num(bonus)+' نقطة من دعوة صديق.');
+  const optimistic=visualUpdatePending&&profile?{appearance:profile.appearance,equipped:profile.equipped}:null;
+  if(optimistic)data={...data,...optimistic};
   const changed = profile?.appearance?.mode !== data.appearance?.mode || profile?.appearance?.palette !== data.appearance?.palette || profile?.plan?.tier !== data.plan?.tier || profile?.adminAccess !== data.adminAccess || JSON.stringify(profile?.appearance?.custom) !== JSON.stringify(data.appearance?.custom);
   profile = data;
+  if(user?.id){
+    const cached={points:data.points,streak:data.streak,inventory:data.inventory,equipped:data.equipped,plan:data.plan,cosmetics:data.cosmetics,appearance:data.appearance,reliability:data.reliability,completed:data.completed,minutes:data.minutes,left:data.left,now:data.now};
+    try{localStorage.setItem('methaq.profile.'+user.id,JSON.stringify(cached));}catch{/* Storage can be unavailable in private mode. */}
+  }
   clearTimeout(expiryTimer);
   const expires = [data.plan?.until,data.pointExpiry,...Object.values(data.cosmetics || {})].filter(value=>value>data.now);
   if (expires.length) expiryTimer = setTimeout(()=>emit('refreshProfile'),Math.min(2147483647,Math.min(...expires)-data.now+250));
-  render(true);
+  if(visualUpdatePending){account();applyAppearance();}
+  else render(true);
+  if(referralLaunch&&data.referrals?.code){const code=referralLaunch;referralLaunch=null;emit('claimReferral',{code});}
   if (changed && appearanceOpen && dialog.open) {
     const focus = dialog.querySelector(':focus');
     const focused = focus?.dataset;
@@ -942,11 +980,6 @@ function updateProfile(data) {
 socket.on('hello', data=>{
   ({user,bot,shortName}=data);
   updateProfile(data.profile);
-  if (referralLaunch && data.profile.referrals?.code) {
-    const code = referralLaunch;
-    referralLaunch = null;
-    emit('claimReferral',{code});
-  }
   presence();
 });
 socket.on('profile',updateProfile);

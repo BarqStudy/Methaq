@@ -35,12 +35,14 @@ export async function createDatabase() {
     ssl:{rejectUnauthorized:false},
     max:Number(process.env.DATABASE_POOL_SIZE || 8),
     connectionTimeoutMillis:10000,
-    idleTimeoutMillis:30000
+    idleTimeoutMillis:300000,
+    keepAlive:true
   });
   const context = new AsyncLocalStorage();
   const client = () => context.getStore() || pool;
   const execute = async (sql,args=[]) => client().query(placeholders(sql),args);
-  await pool.query('SELECT 1');
+  // Establish the small production pool during boot, not while the first student waits.
+  await Promise.all(Array.from({length:Math.min(6,Number(process.env.DATABASE_POOL_SIZE||8))},()=>pool.query('SELECT 1')));
   return {
     kind:'postgres',
     exec: async sql => client().query(sql),
