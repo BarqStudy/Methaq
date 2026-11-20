@@ -104,6 +104,8 @@ const isInvite = () => invite && !inviteDismissed && (!room || revisited);
 const durationAllowed = (minutes) => minutes<120 || isPaid();
 const breakDuration=minutes=>minutes<=25?5:minutes<=50?10:minutes<=90?12:minutes<=120?15:20;
 const dialProgress = (minutes) => minutes<=25 ? Math.max(0,minutes) : Math.min(100,25+(minutes-25)*75/155);
+// The selectable 25–180 minute range is one clockwise revolution.
+const durationDialProgress = (minutes) => Math.max(0,Math.min(100,(Number(minutes)-25)*100/155));
 function decorationStyle() {
   const key = profile?.equipped?.decoration;
   return key ? 'data-decoration="'+key+'" style="--decoration:'+storeArt[key]+'"' : '';
@@ -139,7 +141,7 @@ function home() {
     <section class="panel preview home-timer" ${decorationStyle()} aria-labelledby="focus-timer-title">
       <div class="preview-top"><h1 id="focus-timer-title">مؤقت التركيز</h1><span class="tag"><span class="dot"></span> جلسة ثنائية</span></div>
       ${decorationIcon()}
-      ${dial(chosen+':00','اسحب الدائرة لتحديد الوقت',dialProgress(chosen),true)}
+      ${dial(chosen+':00','اسحب الدائرة مع عقارب الساعة',durationDialProgress(chosen),true)}
       <p class="preview-note">${icon('users')} يبدأ المؤقت بعد موافقة الطرفين</p>
     </section>
     <div class="durations" role="group" aria-label="مدة الجلسة">${durations.map(m=>`<button type="button" class="duration ${m===chosen?'on':''}" data-action="duration" data-value="${m}" aria-pressed="${m===chosen}"><strong>${num(m)}</strong> دقيقة${!durationAllowed(m)?icon('lock-keyhole'):''}</button>`).join('')}</div>`}
@@ -905,8 +907,8 @@ page.addEventListener('pointerdown',event=>{
     let angle=Math.atan2(pointer.clientY-(rect.top+rect.height/2),pointer.clientX-(rect.left+rect.width/2))*180/Math.PI+90;
     if(angle<0)angle+=360;
     candidate=Math.max(25,Math.min(180,Math.round((25+angle/360*155)/5)*5));
-    dialControl.style.setProperty('--progress',dialProgress(candidate));
-    const handle=dialControl.querySelector('.dial-handle');if(handle)handle.style.cssText=dialHandlePosition(dialProgress(candidate));
+    dialControl.style.setProperty('--progress',durationDialProgress(candidate));
+    const handle=dialControl.querySelector('.dial-handle');if(handle)handle.style.cssText=dialHandlePosition(durationDialProgress(candidate));
     dialControl.setAttribute('aria-valuenow',candidate);
     dialControl.querySelector('.digits').textContent=candidate+':00';
   };

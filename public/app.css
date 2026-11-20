@@ -727,3 +727,7 @@ select{appearance:none;-webkit-appearance:none;min-height:42px;padding:8px 13px 
 .product-grid{align-items:stretch}.store-item{grid-template-rows:132px auto minmax(56px,1fr) auto auto;min-height:390px}.store-item h3{align-self:end}.store-item .bodycopy{line-height:1.7}.store-controls{margin-top:auto}.store-controls .secondary,.store-controls .primary{width:100%}.buy-form>button{width:100%}
 .code-hint{display:block;margin-top:2px;color:var(--muted);font-weight:400;font-size:11px}.redeem-code{align-items:center}.redeem-code .field strong{font-size:15px}
 @media(max-width:620px){.product-grid{grid-template-columns:1fr}.store-item{min-height:370px}.inventory-item{grid-template-columns:92px minmax(0,1fr)}.inventory-copy h3{font-size:18px}}
+
+/* Start at twelve o'clock and fill exactly once in the clockwise direction. */
+.dial{background:conic-gradient(from 0deg at 50% 50%,var(--accent) 0deg calc(var(--progress,82) * 3.6deg),var(--accent-line) 0deg)}
+.home-timer .dial{background:conic-gradient(from 0deg at 50% 50%,var(--accent) 0deg calc(var(--home-ring-progress) * 3.6deg),var(--accent-line) 0deg)}
