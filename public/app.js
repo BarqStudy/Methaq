@@ -1,4 +1,4 @@
-import { items,sections,palettes,plans,rewards,successReward,storeArt,defaultAppearance,glassRange,durations,referralPoints,specialties,breakMinutes,specialOnly } from './catalog.js';
+import { items,sections,palettes,plans,rewards,successReward,storeArt,defaultAppearance,glassRange,durations,referralPoints,specialties,specialOnly } from './catalog.js';
 import { readRoomInvite,readReferralInvite,roomInviteUrl,telegramInviteUrl } from './invite.js';
 
 const telegramLaunch = /(?:^#|[&?])tgWebApp/.test(location.hash) || new URLSearchParams(location.search).has('tgWebAppStartParam')
@@ -63,7 +63,7 @@ function toast(message) {
 }
 function emit(event,payload={}) {
   if (!socket?.connected) return toast('الاتصال غير متاح حاليًا.');
-  socket.timeout(5000).emit(event,payload,(error,response) => {
+  socket.timeout(12000).emit(event,payload,(error,response) => {
     if (error || response?.error) toast(response?.error || 'تعذر الاتصال بالخادم.');
     else if (['buy','equip','protect'].includes(event)) toast('تم تحديث مخزونك.');
     else if (event==='customPalette') toast('تم حفظ ألوانك.');
@@ -102,6 +102,7 @@ const button = (action,label,type='secondary',symbol='',value='') => `<button ty
 const heading = (title,caption='') => `<div class="heading">${tab!=='home'?button('backPage','رجوع','page-back','arrow-right'):''}<div class="heading-copy"><h1>${title}</h1>${caption?'<p>'+caption+'</p>':''}</div></div>`;
 const isInvite = () => invite && !inviteDismissed && (!room || revisited);
 const durationAllowed = (minutes) => minutes<120 || isPaid();
+const breakDuration=minutes=>minutes<=25?5:minutes<=50?10:minutes<=90?12:minutes<=120?15:20;
 const dialProgress = (minutes) => minutes<=25 ? Math.max(0,minutes) : Math.min(100,25+(minutes-25)*75/155);
 function decorationStyle() {
   const key = profile?.equipped?.decoration;
@@ -124,8 +125,8 @@ function pendingInvite() {
   return `<section class="panel direct-banner"><p><strong>${esc(incomingInvite.name)}</strong> يدعوك لجلسة ${num(incomingInvite.minutes)} دقيقة.</p>
     <div class="actions">${button('acceptInvite','انضمام','primary','user-round-plus')}${button('dismissInvite','تجاهل','plain')}</div></section>`;
 }
-function dial(text,label,progress=0) {
-  return `<div class="orbit"><div class="dial" style="--progress:${progress}"><div class="dial-content">${icon('lock-keyhole')}<strong class="digits" id="digits">${text}</strong><small id="dial-label">${label}</small></div></div>
+function dial(text,label,progress=0,interactive=false) {
+  return `<div class="orbit"><div class="dial ${interactive?'interactive-dial':''}" style="--progress:${progress}" ${interactive?'role="slider" aria-label="مدة الجلسة" aria-valuemin="25" aria-valuemax="180" aria-valuenow="'+chosen+'" tabindex="0"':''}><div class="dial-content">${icon('lock-keyhole')}<strong class="digits" id="digits">${text}</strong><small id="dial-label">${label}</small></div></div>
   <span class="satellite one">${icon('user-round')}</span><span class="satellite two">${icon('user-round')}</span></div>`;
 }
 function home() {
@@ -137,7 +138,7 @@ function home() {
     <section class="panel preview home-timer" ${decorationStyle()} aria-labelledby="focus-timer-title">
       <div class="preview-top"><h1 id="focus-timer-title">مؤقت التركيز</h1><span class="tag"><span class="dot"></span> جلسة ثنائية</span></div>
       ${decorationIcon()}
-      ${dial(chosen+':00','مدة الجلسة',dialProgress(chosen))}
+      ${dial(chosen+':00','اسحب الدائرة لتحديد الوقت',dialProgress(chosen),true)}
       <p class="preview-note">${icon('users')} يبدأ المؤقت بعد موافقة الطرفين</p>
     </section>
     <div class="durations" role="group" aria-label="مدة الجلسة">${durations.map(m=>`<button type="button" class="duration ${m===chosen?'on':''}" data-action="duration" data-value="${m}" aria-pressed="${m===chosen}"><strong>${num(m)}</strong> دقيقة${!durationAllowed(m)?icon('lock-keyhole'):''}</button>`).join('')}</div>`}
@@ -151,7 +152,7 @@ function home() {
 function person(p, active=false) {
   if (!p) return `<article class="panel person">${avatar()}<div><h3>شريك التركيز</h3><p>بانتظار الانضمام</p></div></article>`;
   const status = active ? p.exitAt ? '<span style="color:var(--danger)">حاول الخروج! <b data-exit="'+p.exitAt+'"></b></span>'
-    : p.idle ? '<span class="gold">خامل</span>' : '<span class="dot pulse"></span> يركز الآن'
+    : '<span class="dot pulse"></span> يركز الآن'
     : p.ready ? 'وافق على الميثاق' : 'بانتظار الموافقة';
   return `<article class="panel person">${avatar(p)}<div><h3>${esc(p.name)} ${p.id===user?.id?' <small class="muted">(أنت)</small>':''}</h3>
   ${p.equipped?.title?'<small class="gold">'+items[p.equipped.title][1]+'</small>':''}<p>${esc(p.goal)}</p><span class="tag">${status}</span></div></article>`;
@@ -191,9 +192,9 @@ function outcome() {
   ${left && profile.inventory.shield && result.old_streak && !profile.streak ? button('protect','استخدام درع الحماية','secondary','shield','shield'):''}
   </section>
   ${succeeded && room.breakUntil ? `<section class="panel break-card">
-    <span class="tile-icon">${icon('timer-reset')}</span><div><h2>استراحة بعد التركيز</h2><p class="bodycopy">${num(breakMinutes[room.minutes])} دقيقة قبل جلستك التالية</p></div>
+    <span class="tile-icon">${icon('timer-reset')}</span><div><h2>استراحة بعد التركيز</h2><p class="bodycopy">${num(breakDuration(room.minutes))} دقيقة قبل جلستك التالية</p></div>
     <strong class="break-time" id="break-time" dir="ltr"></strong></section>`:''}
-  ${button('reset','جلسة جديدة','secondary','plus')}</div></div>`;
+  <div class="actions">${button('reset','جلسة جديدة','secondary','plus')}${button('goHome','رجوع للرئيسية','plain','arrow-right')}</div></div></div>`;
 }
 const weekDay = new Intl.DateTimeFormat('ar-SA',{weekday:'short',timeZone:'UTC'});
 const sessionDate = new Intl.DateTimeFormat('ar-SA',{day:'numeric',month:'short',calendar:'gregory',timeZone:'UTC'});
@@ -296,7 +297,7 @@ function store() {
   const p = profile;
   return `<div class="inner store-page">${heading('متجر ميثاق','رصيدك الحالي '+num(p?.points)+' نقطة')}
   <form id="redeem-code-form" class="panel join-code redeem-code">
-    <label class="field">كود العضوية<input name="code" dir="ltr" maxlength="21" placeholder="MTHQ-…" required></label>
+    <label class="field"><strong>عندك كود؟ فعّله الآن</strong><small class="code-hint"> افتح مزايا عضويتك فورًا</small><input name="code" dir="ltr" maxlength="21" placeholder="MTHQ-…" required></label>
     <button class="secondary">${icon('ticket-check')} فعّل الكود</button>
   </form>
   <div class="filters">${sections.map((x,i)=>button('filter',x,i===category?'selected':'','',i)).join('')}</div>
@@ -319,7 +320,7 @@ function themes() {
 function shopItems(groupIndex) {
   const p = profile;
   return `<p class="bodycopy section-rule">${icon('layers')} ${[1,2,4].includes(groupIndex)?'في هذا القسم يُفعّل منتج واحد فقط.':'في هذا القسم يُستخدم منتج واحد في كل مرة.'}</p>
-    <div class="store-grid">${Object.entries(items).filter(([key,x])=>key!=='marathon' && x[0]===groupIndex).map(([key,[group,label,cost,symbol,desc]])=>{
+    <div class="store-grid product-grid">${Object.entries(items).filter(([key,x])=>key!=='marathon' && x[0]===groupIndex).map(([key,[group,label,cost,symbol,desc]])=>{
     const count = p?.inventory[key] || 0;
     const expires = p?.cosmetics?.[key];
     const collectible = [1,2,4].includes(group);
@@ -866,7 +867,7 @@ document.addEventListener('click',event=>{
   else if (action==='adminCopy') {
     navigator.clipboard?.writeText(value).then(()=>toast('نُسخ الكود.'),()=>toast('حدد الكود وانسخه يدويًا.'));
   }
-  else if (action==='goHome') { tab='home'; render(); window.scrollTo({top:0,behavior:'instant'}); }
+  else if (action==='goHome') { if(room?.phase==='outcome')revisited=true;tab='home'; render(true); window.scrollTo({top:0,behavior:'instant'}); }
   else if (action==='activityDay') { activityDay=value; render(true); }
   else if (action==='copyReferralCode') copyInvite('#my-referral-code','نُسخ كود دعوتك.');
   else if (action==='copyReferralLink' || action==='shareReferral') shareReferral(action==='copyReferralLink');
@@ -892,6 +893,28 @@ document.addEventListener('click',event=>{
   else if (action==='answerPause') emit(action,{accept:value==='yes'});
   else if (action==='result') emit(action,{done:value==='yes'});
   else emit(action,{item:value});
+});
+page.addEventListener('pointerdown',event=>{
+  const dialControl=event.target.closest('.interactive-dial');
+  if(!dialControl)return;
+  event.preventDefault();dialControl.setPointerCapture?.(event.pointerId);
+  let candidate=chosen;
+  const select=pointer=>{
+    const rect=dialControl.getBoundingClientRect();
+    let angle=Math.atan2(pointer.clientY-(rect.top+rect.height/2),pointer.clientX-(rect.left+rect.width/2))*180/Math.PI+90;
+    if(angle<0)angle+=360;
+    candidate=Math.max(25,Math.min(180,Math.round((25+angle/360*155)/5)*5));
+    dialControl.style.setProperty('--progress',dialProgress(candidate));
+    dialControl.setAttribute('aria-valuenow',candidate);
+    dialControl.querySelector('.digits').textContent=candidate+':00';
+  };
+  const move=pointer=>select(pointer);
+  const end=()=>{
+    window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',end);
+    if(candidate>=120&&!isPaid()){render(true);return premiumDuration(candidate);}
+    chosen=candidate;render(true);tg?.HapticFeedback?.selectionChanged();
+  };
+  select(event);window.addEventListener('pointermove',move);window.addEventListener('pointerup',end,{once:true});
 });
 page.addEventListener('input',event=>{
   if (event.target.name==='goal') goal=event.target.value;
@@ -939,8 +962,7 @@ page.addEventListener('submit',event=>{
     else {
       const code=form.get('code').trim().toUpperCase();
       if (!/^[A-F0-9]{10}$/.test(code)) return toast('اكتب رمز الغرفة المكوّن من ١٠ خانات.');
-      invite=code; inviteDismissed=false; render(true);
-      window.scrollTo({top:0,behavior:'instant'});
+      invite=code;inviteDismissed=false;emit('join',{code,goal:''});
     }
     return;
   }

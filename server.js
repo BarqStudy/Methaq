@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 import { createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Server } from 'socket.io';
 import { Telegraf, Markup } from 'telegraf';
-import { items,glassRange,palettes,plans,rewards,successReward,durations,referralPoints,breakMinutes,specialOnly } from './public/catalog.js';
+import { items,glassRange,palettes,plans,rewards,successReward,referralPoints,specialOnly } from './public/catalog.js';
 import { createMembership,paidPrices } from './membership.js';
 import { roomInviteUrl } from './public/invite.js';
 import { createDatabase } from './database.js';
@@ -59,6 +59,8 @@ const io = new Server(http, { pingInterval:4000, pingTimeout:4000 });
 const rooms = new Map();
 const memberships = new Map();
 const minute = 60000;
+const validDuration=value=>Number.isInteger(value)&&value>=25&&value<=180&&value%5===0;
+const sessionBreak=value=>value<=25?5:value<=50?10:value<=90?12:value<=120?15:20;
 export const clock = { now: Date.now };
 const membership = await createMembership(db,() => clock.now());
 const billingEnabled = Boolean(bot && Object.values(paidPrices).some(Boolean));
@@ -230,7 +232,7 @@ async function finish(room, leaving) {
   });
   room.phase = 'outcome';
   room.finished = now;
-  if (!leaving) room.breakUntil = now+breakMinutes[room.minutes]*minute;
+  if (!leaving) room.breakUntil = now+sessionBreak(room.minutes)*minute;
   for (const player of new Set([...room.members.map(p=>p.id),...rewarded])) io.to('player:'+player).emit('profile',await profile(player));
   await saveRoom(room,true);await send(room);
 }
@@ -248,7 +250,7 @@ async function tick(room, now) {
       p.checkUntil = now+30000;
       io.to('player:'+p.id).emit('signal','check');
     }
-    p.idle = now-p.activity > minute;
+    p.idle = false;
   }
   await send(room);
 }
@@ -525,7 +527,7 @@ io.on('connection', async(socket) => {
     return goal || 'جلسة تركيز';
   };
   action('create', async({ minutes, goal, pact }) => {
-    if (!durations.includes(minutes)) fail('اختر مدة صالحة.');
+    if (!validDuration(minutes)) fail('اختر مدة بين ٢٥ و١٨٠ دقيقة.');
     if (minutes >= 120 && !await isPaid(id)) fail('جلسات ١٢٠ و١٨٠ دقيقة للمشتركين فقط.');
     let roomId;
     do { roomId = randomUUID().replaceAll('-',''); }
@@ -595,7 +597,7 @@ io.on('connection', async(socket) => {
     await tick(room,clock.now());
     if (room.phase !== 'active') return;
     const p = room.members.find(p => p.id === id);
-    if (hidden) p.exitAt ||= clock.now()+10000;
+    if (hidden) p.exitAt ||= clock.now()+15000;
     else { p.exitAt = null; p.activity = clock.now(); }
     await send(room);
   }
