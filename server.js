@@ -244,19 +244,8 @@ async function finish(room, leaving) {
 
 async function tick(room, now) {
   if (room.phase !== 'active') return;
-  const failed = room.members.map(p => [p, Math.min(p.exitAt || Infinity,p.checkUntil || Infinity)])
-    .filter(([,deadline]) => deadline <= now && deadline < room.endAt).sort((a,b) => a[1]-b[1])[0];
-  if (failed) return finish(room, failed[0].id);
   if (now >= room.endAt) return finish(room);
   if (now < room.startsAt || now < room.pauseUntil) return;
-  for (const p of room.members) {
-    if (p.nextCheck && now >= p.nextCheck && room.endAt-now > 35000) {
-      p.nextCheck = null;
-      p.checkUntil = now+30000;
-      io.to('player:'+p.id).emit('signal','check');
-    }
-    p.idle = false;
-  }
   await send(room);
 }
 
@@ -308,7 +297,7 @@ async function dismissOutcome(room,id){
 }
 
 for(const row of await db.all('SELECT state FROM live_rooms')){
-  try{const room=JSON.parse(row.state);if(room?.id&&room?.members){const changed=!/^[A-F0-9]{8}$/.test(room.code);if(changed)room.code=newRoomCode();await Promise.all(room.members.map(async member=>{member.exitAt=null;member.checkUntil=null;member.activity=clock.now();member.equipped=JSON.parse((await query('SELECT equipped FROM players WHERE id=?',member.id))?.equipped||'{}');if(!room.dismissed?.includes(member.id))memberships.set(member.id,room.id);}));rooms.set(room.id,room);if(changed)await saveRoom(room,true);}}catch{/* Ignore corrupt room snapshots. */}
+  try{const room=JSON.parse(row.state);if(room?.id&&room?.members){const changed=!/^[A-F0-9]{8}$/.test(room.code);if(changed)room.code=newRoomCode();await Promise.all(room.members.map(async member=>{delete member.exitAt;delete member.checkUntil;delete member.nextCheck;delete member.activity;member.equipped=JSON.parse((await query('SELECT equipped FROM players WHERE id=?',member.id))?.equipped||'{}');if(!room.dismissed?.includes(member.id))memberships.set(member.id,room.id);}));rooms.set(room.id,room);if(changed)await saveRoom(room,true);}}catch{/* Ignore corrupt room snapshots. */}
 }
 
 io.use(async(socket,next) => {
@@ -619,7 +608,6 @@ io.on('connection', async(socket) => {
       room.endAt = room.startsAt+room.minutes*minute;
       const pairIds=room.members.map(member=>member.id).sort();
       await run('INSERT INTO room_pairs(room,first_player,second_player,started_at) VALUES(?,?,?,?) ON CONFLICT(room) DO NOTHING',room.id,pairIds[0],pairIds[1],clock.now());
-      for (const m of room.members) m.nextCheck = room.startsAt + (2+Math.random()*(room.minutes-4))*minute;
     }
     await send(room);
   });
@@ -629,29 +617,16 @@ io.on('connection', async(socket) => {
     if (room?.phase !== 'active') fail('الجلسة غير نشطة.');
     return [room,room.members.find(p => p.id === id),room.members.find(p => p.id !== id)];
   }
-  async function presence(hidden) {
-    const room = current();
-    if (room?.phase !== 'active') return;
-    await tick(room,clock.now());
-    if (room.phase !== 'active') return;
-    const p = room.members.find(p => p.id === id);
-    if (hidden) p.exitAt ||= clock.now()+15000;
-    else { p.exitAt = null; p.activity = clock.now(); }
-    await send(room);
-  }
-  action('presence', ({hidden}) => presence(hidden === true));
-  socket.on('disconnect', () => { if (!io.sockets.adapter.rooms.get(playerRoom)?.size) presence(true); });
-  action('activity', async() => { const room = current(); if (room?.phase === 'active'){room.members.find(p=>p.id===id).activity=clock.now();await saveRoom(room);} });
-  action('check', async() => { const [room,p] = await active(); p.checkUntil = null; p.activity = clock.now(); await send(room); });
+  action('presence',()=>{});
+  action('activity',()=>{});
   action('withdraw', async() => { const [room] = await active(); await finish(room,id); });
   action('signal', async({item}) => {
     const room = current();
     if (item === 'horn' && (room?.phase !== 'outcome' || !(await profile(id)).history.some(r=>r.room===room.id && r.status==='success'))) fail('بوق الفوز متاح بعد إتمام الجلسة.');
     const [,p,partner] = item === 'horn' ? [room, room.members.find(m=>m.id===id),room.members.find(m=>m.id!==id)] : await active();
     if (clock.now()-(p.lastSignal || 0)<10000) fail('انتظر قليلًا قبل إرسال تنبيه آخر.');
-    if (item === 'nudge' && !partner.idle) fail('شريكك يركز الآن.');
     if (['zap','coffee','horn'].includes(item)) await use(id,item);
-    else if (item !== 'nudge') fail('تفاعل غير صالح.');
+    else fail('تفاعل غير صالح.');
     p.lastSignal=clock.now();
     io.to('player:'+partner.id).emit('signal',item);
     if(['zap','coffee','horn'].includes(item))io.to(room.id).emit('giftMoment',{item,from:p.name,to:partner.name});
@@ -672,10 +647,6 @@ io.on('connection', async(socket) => {
       else await use(request.id,'pause');
       room.pauseUntil = clock.now()+3*minute;
       room.endAt += 3*minute;
-      for (const p of room.members) {
-        if (p.nextCheck) p.nextCheck += 3*minute;
-        if (p.checkUntil) p.checkUntil += 3*minute;
-      }
       io.to('player:'+request.id).emit('profile',await profile(request.id));
     }
     room.pauseRequest = null;

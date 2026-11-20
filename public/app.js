@@ -34,7 +34,6 @@ dialog.addEventListener('close',()=>{
   glassPreview=undefined;
   applyGlass();
 });
-dialog.addEventListener('cancel',event=>{ if (dialog.querySelector('#check-deadline')) event.preventDefault(); });
 const launch = {startParam:tg?.initDataUnsafe?.start_param,hash:location.hash,search:location.search};
 let invite = readRoomInvite(launch);
 let referralLaunch = readReferralInvite(launch);
@@ -44,7 +43,7 @@ const esc = (v) => String(v ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;
 const num = (v) => Number(v || 0).toLocaleString('ar',{numberingSystem:'arab'});
 const remainingTime=(value,now=Date.now())=>{const minutes=Math.max(0,Math.ceil((value-now)/60000));const days=Math.floor(minutes/1440);const hours=Math.floor((minutes%1440)/60);const rest=minutes%60;return [days&&num(days)+' يوم',hours&&num(hours)+' ساعة',!days&&!hours&&num(rest)+' دقيقة'].filter(Boolean).join(' و ');};
 let room, socket, user, profile, bot, shortName, clockOffset = 0, chosen = 5, tab = invite?'rooms':'home', category = 0, goal = '', pact = '', inviteDismissed = false;
-let viewKey, noticeTimeout, revisited, lastActivity = 0, lastCheck, audio, ambience;
+let viewKey, noticeTimeout, revisited, audio, ambience;
 let preparingInvite = false, incomingInvite;
 let appearanceOpen = false, checkoutOpen = false, expiryTimer, glassPreview, glassRequest = 0;
 const isPaid = () => ['pro','special'].includes(profile?.plan?.tier);
@@ -225,8 +224,7 @@ function roomsPage(){
 }
 function person(p, active=false) {
   if (!p) return `<article class="panel person">${avatar()}<div><h3>شريك التركيز</h3><p>بانتظار الانضمام</p></div></article>`;
-  const status = active ? p.exitAt ? '<span style="color:var(--danger)">حاول الخروج! <b data-exit="'+p.exitAt+'"></b></span>'
-    : '<span class="dot pulse"></span> يركز الآن'
+  const status = active ? '<span class="dot pulse"></span> يركز الآن'
     : p.ready ? 'وافق على الميثاق' : 'بانتظار الموافقة';
   return `<article class="panel person">${avatar(p)}<div><h3 class="student-name">${esc(p.name)} ${membershipMark(p.tier)} ${p.id===user?.id?' <small class="muted">(أنت)</small>':''}</h3>
   ${p.equipped?.title?'<small class="gold">'+items[p.equipped.title][1]+'</small>':''}<p>${esc(p.goal)}</p><span class="tag">${status}</span></div></article>`;
@@ -250,7 +248,7 @@ function active() {
   ${request ? '<section class="panel actions">'+(request.id===user.id?'بانتظار موافقة شريكك على الاستراحة.':'شريكك يطلب استراحة لمدة ٣ دقائق. '+button('answerPause','أوافق','primary','','yes')+button('answerPause','متابعة الجلسة','secondary','','no'))+'</section>':''}
   <section class="panel focus-tools stack">
     <div class="tool-section sound-section"><div class="tool-heading">${icon('volume-2')}<div><h3>أجواء هادئة</h3><p>صوت خافت يساعدك على التركيز</p></div></div><div class="sound-grid" aria-label="أصوات الخلفية">${[['rain','مطر هادئ','cloud-rain'],['cafe','مقهى هادئ','coffee'],['white','ضوضاء ناعمة','waves']].map(([k,v,symbol])=>button('sound',v,ambience===k?'primary sound-choice active':'secondary sound-choice',symbol,k)).join('')}</div></div>
-    ${(partner?.idle||inventory.zap||inventory.coffee||inventory.pause||(isPaid()&&!room.premiumPauseUsed))?`<div class="tool-section gift-section"><div class="tool-heading">${icon('gift')}<div><h3>تفاعل مع شريكك</h3><p>لفتة صغيرة تصل إليه فورًا</p></div></div><div class="gift-grid">${partner?.idle?button('signal','تنبيه لطيف','secondary gift-action','zap','nudge'):''}${inventory.zap?button('signal','صعقة التركيز','secondary gift-action','zap','zap'):''}${inventory.coffee?button('signal','إهداء قهوة','secondary gift-action','coffee','coffee'):''}${inventory.pause||(isPaid()&&!room.premiumPauseUsed)?button('requestPause','استراحة محارب','secondary gift-action','timer-reset'):''}</div></div>`:''}
+    ${(inventory.zap||inventory.coffee||inventory.pause||(isPaid()&&!room.premiumPauseUsed))?`<div class="tool-section gift-section"><div class="tool-heading">${icon('gift')}<div><h3>تفاعل مع شريكك</h3><p>لفتة صغيرة تصل إليه فورًا</p></div></div><div class="gift-grid">${inventory.zap?button('signal','صعقة التركيز','secondary gift-action','zap','zap'):''}${inventory.coffee?button('signal','إهداء قهوة','secondary gift-action','coffee','coffee'):''}${inventory.pause||(isPaid()&&!room.premiumPauseUsed)?button('requestPause','استراحة محارب','secondary gift-action','timer-reset'):''}</div></div>`:''}
     <div class="withdraw-section"><div><strong>إنهاء الجلسة</strong><small>سيُسجّل الانسحاب في حسابك</small></div>${button('withdraw','انسحاب','danger withdraw-action','log-out')}</div>
   </section></div></div>`;
 }
@@ -777,20 +775,10 @@ function updateClock() {
   document.querySelector('#dial-label').textContent = counting?'تبدأ الجلسة خلال':paused?'وقت الاستراحة':'الوقت المتبقي';
   const focusRemaining = counting ? room.endAt-room.startsAt : room.endAt-(paused ? room.pauseUntil : now);
   digits.closest('.dial').style.setProperty('--progress',dialProgress(focusRemaining/60000));
-  document.querySelectorAll('[data-exit]').forEach(e=>e.textContent=num(Math.max(0,Math.ceil((Number(e.dataset.exit)-now)/1000)))+' ث');
-  const check = room.members.find(p=>p.id===user?.id)?.checkUntil;
-  if (check > now && check!==lastCheck && appearanceOpen) dialog.close();
-  if (check > now && check!==lastCheck && !dialog.open) {
-    lastCheck = check;
-    modal('هل ما زلت مركزًا؟','أكد حضورك خلال ٣٠ ثانية.',button('check','نعم، ما زلت مركزًا','primary','check'));
-  }
-  const deadline = dialog.querySelector('#check-deadline');
-  if (deadline && check) deadline.textContent = num(Math.max(0,Math.ceil((check-now)/1000)))+' ثانية';
-  if (deadline && (!check || check<=now)) dialog.close();
 }
 setInterval(updateClock,100);
 function modal(title,text,buttons) {
-  dialog.innerHTML = `<div class="stack"><h2>${title}</h2><p class="bodycopy">${text}</p>${buttons.includes('data-action="check"')?'<p id="check-deadline"></p>':''}<div class="actions">${buttons}</div></div>`;
+  dialog.innerHTML = `<div class="stack"><h2>${title}</h2><p class="bodycopy">${text}</p><div class="actions">${buttons}</div></div>`;
   if (!dialog.open) dialog.showModal();
 }
 const vibe = () => {
@@ -859,11 +847,20 @@ function invitePanel() {
     ${tg?.initData?`<form id="direct-invite-form" class="join-code"><label class="field">دعوة مباشرة<input name="handle" dir="ltr" placeholder="@username" maxlength="33" required></label><button class="secondary">${icon('user-round-plus')} ادعُه</button></form>`:''}
   </section>`;
 }
-async function copyInvite(selector, message) {
+function showCopied(control){
+  if(!control)return;
+  const original=control.innerHTML;
+  control.classList.add('copy-success');
+  control.innerHTML=icon('check')+' تم النسخ';
+  clearTimeout(control._copyTimer);
+  control._copyTimer=setTimeout(()=>{if(control.isConnected){control.classList.remove('copy-success');control.innerHTML=original;}},1800);
+}
+async function copyInvite(selector, message, control) {
   const field = document.querySelector(selector);
   if (!field) return;
   try {
     await navigator.clipboard.writeText(field.value);
+    showCopied(control);
     toast(message);
   } catch {
     field.focus();
@@ -969,13 +966,13 @@ document.addEventListener('click',event=>{
   }
   else if (action==='goHome') { if(room?.phase==='outcome'){revisited=true;emit('dismissOutcome');room=null;}tab='home'; render(true); window.scrollTo({top:0,behavior:'instant'}); }
   else if (action==='activityDay') { activityDay=value; render(true); }
-  else if (action==='copyReferralCode') copyInvite('#my-referral-code','نُسخ كود دعوتك.');
+  else if (action==='copyReferralCode') copyInvite('#my-referral-code','نُسخ كود دعوتك.',b);
   else if (action==='copyReferralLink' || action==='shareReferral') shareReferral(action==='copyReferralLink');
   else if (action==='checkout') checkout(value,b);
   else if (action==='ignore') { inviteDismissed=true; render(true); }
   else if (action==='invite') shareInvite(b);
-  else if (action==='copyInvite') copyInvite('#invite-url','نُسخ رابط الدعوة.');
-  else if (action==='copyCode') {const field=document.querySelector('#invite-code');if(field)copyInvite('#invite-code','نُسخ رمز الغرفة.');else navigator.clipboard?.writeText(room?.code||'').then(()=>toast('نُسخ رمز الغرفة.'));}
+  else if (action==='copyInvite') copyInvite('#invite-url','نُسخ رابط الدعوة.',b);
+  else if (action==='copyCode') {const field=document.querySelector('#invite-code');if(field)copyInvite('#invite-code','نُسخ رمز الغرفة.',b);else navigator.clipboard?.writeText(room?.code||'').then(()=>{showCopied(b);toast('نُسخ رمز الغرفة.');});}
   else if (action==='acceptInvite') {
     if (!incomingInvite || (room && room.phase!=='outcome')) return;
     if(dialog.open)dialog.close();
@@ -988,7 +985,6 @@ document.addEventListener('click',event=>{
   else if (action==='withdraw') modal('هل تريد الانسحاب؟','يُسجّل الانسحاب وتُخصم حتى ٢٠ نقطة من رصيدك.',button('confirmWithdraw','تأكيد الانسحاب','danger')+button('close','متابعة التركيز','secondary'));
   else if (action==='close') dialog.close();
   else if (action==='confirmWithdraw') { dialog.close(); emit('withdraw'); }
-  else if (action==='check') { dialog.close(); emit('check'); }
   else if (action==='reset') { revisited=true;emit('dismissOutcome');room=null;tab='home';render(true); }
   else if (action==='shareCard') shareCard().catch(()=>toast('تعذرت مشاركة البطاقة.'));
   else if (action==='answerPause') emit(action,{accept:value==='yes'});
@@ -1083,16 +1079,6 @@ page.addEventListener('submit',event=>{
   if(event.target.id==='join-session-form')emit('join',{code:invite,goal});
   else emit('create',{minutes:chosen,goal});
 });
-const presence = () => {
-  if (socket?.connected && room?.phase==='active') socket.emit('presence',{hidden:document.hidden},()=>{});
-};
-document.addEventListener('visibilitychange',presence);
-window.addEventListener('pagehide',()=>socket?.connected && room?.phase==='active' && socket.emit('presence',{hidden:true},()=>{}));
-for (const event of ['pointerdown','keydown','scroll']) document.addEventListener(event,()=>{
-  if (socket?.connected && room?.phase==='active' && Date.now()-lastActivity>3000) {
-    lastActivity=Date.now();socket.emit('activity',{},()=>{});
-  }
-},{passive:true});
 const telegramUser=tg?.initDataUnsafe?.user;
 if(telegramUser){
   user={id:String(telegramUser.id),name:[telegramUser.first_name,telegramUser.last_name].filter(Boolean).join(' '),photo:telegramUser.photo_url,handle:telegramUser.username?.toLowerCase()};
@@ -1144,7 +1130,6 @@ function updateProfile(data) {
 socket.on('hello', data=>{
   ({user,bot,shortName}=data);
   updateProfile(data.profile);
-  presence();
   maybeStartTour();
 });
 socket.on('profile',updateProfile);
@@ -1156,7 +1141,6 @@ socket.on('room', next=>{
   if (previous?.id!==next?.id) { revisited=false; tab='home'; if (next) inviteDismissed=true; }
   if (previous?.phase!=='active' && next?.phase==='active') {
     tab='home';
-    presence();
     if (profile?.equipped?.theme) sound(profile.equipped.theme,false);
   }
   if (previous?.phase==='active' && next?.phase!=='active') {
@@ -1176,6 +1160,6 @@ socket.on('directInvite', data=>{
   }
 });
 socket.on('signal',kind=>{
-  if(kind==='nudge'){vibe();toast('شريكك يذكّرك بالتركيز');}
+  if(kind==='nudge')return;
 });
 socket.on('giftMoment',showGiftMoment);
