@@ -144,7 +144,7 @@ function home() {
       ${dial(chosen+':00','',durationDialProgress(chosen),true)}
       <p class="preview-note">${icon('users')} يبدأ المؤقت بعد موافقة الطرفين</p>
     </section>
-    <div class="durations" role="group" aria-label="مدة الجلسة">${durations.map(m=>`<button type="button" class="duration ${m===chosen?'on':''}" data-action="duration" data-value="${m}" aria-pressed="${m===chosen}"><strong>${num(m)}</strong> دقيقة${!durationAllowed(m)?icon('lock-keyhole'):''}</button>`).join('')}</div>`}
+    <section class="duration-picker" aria-label="اختيار سريع للمدة"><div class="duration-picker-head"><span>${icon('clock-3')} اختيار سريع</span><small>بالدقائق</small></div><div class="durations" role="group" aria-label="مدة الجلسة">${durations.map(m=>`<button type="button" class="duration ${m===chosen?'on':''}" data-action="duration" data-value="${m}" aria-pressed="${m===chosen}"><strong>${num(m)}</strong><span>دقيقة</span>${!durationAllowed(m)?icon('lock-keyhole'):''}</button>`).join('')}</div></section>`}
     <form class="panel form-main" id="session-form"><div class="panel-title"><span class="tile-icon">${icon('sliders-horizontal')}</span><div><h2>${joining?'انضم إلى الجلسة':'إعداد الجلسة'}</h2></div></div>
     <label class="field">هدف الجلسة <small class="optional">اختياري</small><input maxlength="160" name="goal" placeholder="ماذا ستنجز في هذه الجلسة؟" value="${esc(goal)}"></label>
     <button class="primary wide create-room-cta">${joining?icon('log-in'):'<span class="cta-cube" aria-hidden="true">'+icon('plus')+'</span>'}<span>${joining?'الانضمام إلى الغرفة':'ابدأ ميثاقك وأنشئ غرفة'}</span>${joining?'':'<small>وادعُ شريكك للتركيز معًا</small>'}</button>
@@ -854,7 +854,6 @@ document.addEventListener('click',event=>{
   if (action==='duration') {
     if (!durationAllowed(+value)) return premiumDuration(+value);
     chosen=+value; render(true);
-    requestAnimationFrame(()=>page.querySelector('.duration.on')?.scrollIntoView({behavior:'smooth',block:'nearest',inline:'center'}));
   } else if (action==='appearanceMenu') openAppearance();
   else if (action==='mode') changeAppearance({mode:value});
   else if (action==='palette') {
