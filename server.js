@@ -53,6 +53,7 @@ await db.exec(`
   CREATE TABLE IF NOT EXISTS room_pairs(room TEXT PRIMARY KEY,first_player TEXT NOT NULL,second_player TEXT NOT NULL,started_at BIGINT NOT NULL);
   CREATE INDEX IF NOT EXISTS room_pairs_players ON room_pairs(first_player,second_player);
   CREATE TABLE IF NOT EXISTS outcome_views(room TEXT NOT NULL,player TEXT NOT NULL,seen_at BIGINT NOT NULL,PRIMARY KEY(room,player));
+  CREATE TABLE IF NOT EXISTS pending_direct_invites(recipient TEXT PRIMARY KEY,room TEXT NOT NULL,sender TEXT NOT NULL,minutes INTEGER NOT NULL,created_at BIGINT NOT NULL);
 `);
 try{await db.exec('ALTER TABLE players ADD COLUMN tour_seen INTEGER NOT NULL DEFAULT 0');}catch(error){if(!/duplicate|already exists/i.test(error.message))throw error;}
 const app = express();
@@ -344,6 +345,14 @@ io.on('connection', async(socket) => {
   const isPaid=async player=>(await membership.planStatus(player)).tier!=='free';
   const initialProfile=await profile(id,false);
   socket.emit('hello',{user,profile:initialProfile,bot:BOT_USERNAME,shortName:APP_SHORT_NAME});
+  const pendingInvite=await query('SELECT * FROM pending_direct_invites WHERE recipient=?',id);
+  if(pendingInvite){
+    const invitedRoom=rooms.get(pendingInvite.room);
+    if(invitedRoom?.phase==='lobby'&&invitedRoom.members.length===1){
+      socket.emit('directInvite',{code:invitedRoom.id,name:pendingInvite.sender,minutes:Number(pendingInvite.minutes)});
+    }
+    await run('DELETE FROM pending_direct_invites WHERE recipient=?',id);
+  }
   analytics(id).then(details=>socket.connected&&socket.emit('profile',{...initialProfile,...details,now:clock.now()})).catch(error=>console.error('تعذّر تحميل تفاصيل الحساب.',error.message));
 
   function action(event, fn) {
@@ -572,19 +581,25 @@ io.on('connection', async(socket) => {
     }
   });
   let nextDirectInvite = 0;
-  action('directInvite', ({handle}) => {
+  action('directInvite', async({handle}) => {
     const room = current();
     if (room?.phase!=='lobby' || room.members.length!==1) fail('الدعوة متاحة عندما تكون الغرفة بانتظار شريك.');
     const target = typeof handle==='string' ? handle.trim().replace(/^@/,'').toLowerCase() : '';
     if (!/^[a-z0-9_]{5,32}$/.test(target)) fail('اكتب اسم مستخدم تليجرام.');
+    const recipient=await query('SELECT id FROM telegram_students WHERE handle=?',target);
+    if(!recipient)fail('هذا الحساب لم يفتح ميثاق من قبل. أرسل له الرابط أولًا.');
+    if(recipient.id===id)fail('لا يمكنك دعوة حسابك نفسه.');
+    const recipientRoom=rooms.get(memberships.get(recipient.id));
+    if (recipientRoom && recipientRoom.phase!=='outcome') fail('شريكك موجود في غرفة أخرى.');
     if (clock.now() < nextDirectInvite) fail('انتظر قليلًا قبل إرسال دعوة أخرى.');
     nextDirectInvite = clock.now()+5000;
-    const recipient = [...io.sockets.sockets.values()].find(candidate=>
-      candidate.data.user.handle===target && candidate.data.user.id!==id);
-    if (!recipient) fail('خلي شريكك يفتح ميثاق أولًا أو أرسل له الرابط.');
-    const recipientRoom = rooms.get(memberships.get(recipient.data.user.id));
-    if (recipientRoom && recipientRoom.phase!=='outcome') fail('شريكك موجود في غرفة أخرى.');
-    io.to('player:'+recipient.data.user.id).emit('directInvite',{code:room.id, name:user.name, minutes:room.minutes});
+    const targetRoom='player:'+recipient.id;
+    if(io.sockets.adapter.rooms.get(targetRoom)?.size){
+      io.to(targetRoom).emit('directInvite',{code:room.id,name:user.name,minutes:room.minutes});
+      await run('DELETE FROM pending_direct_invites WHERE recipient=?',recipient.id);
+    }else{
+      await run(`INSERT INTO pending_direct_invites(recipient,room,sender,minutes,created_at) VALUES(?,?,?,?,?) ON CONFLICT(recipient) DO UPDATE SET room=excluded.room,sender=excluded.sender,minutes=excluded.minutes,created_at=excluded.created_at`,recipient.id,room.id,user.name,room.minutes,clock.now());
+    }
   });
   action('leaveLobby', () => leaveWaitingRoom(current(),id));
   action('dismissOutcome',()=>dismissOutcome(current(),id));
