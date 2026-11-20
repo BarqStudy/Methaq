@@ -190,6 +190,14 @@ function pendingInvite() {
   return `<section class="panel direct-banner"><p><strong>${esc(incomingInvite.name)}</strong> يدعوك لجلسة ${num(incomingInvite.minutes)} دقيقة.</p>
     <div class="actions">${button('acceptInvite','انضمام','primary','user-round-plus')}${button('dismissInvite','تجاهل','plain')}</div></section>`;
 }
+function showIncomingInvite(data){
+  incomingInvite=data;
+  if(dialog.open)dialog.close();
+  appearanceOpen=false;
+  dialog.innerHTML=`<section class="direct-invite-dialog"><button type="button" class="tour-close" data-action="dismissInvite" aria-label="إغلاق">×</button><div class="invite-avatar">${icon('user-round-plus')}</div><small>دعوة تركيز مباشرة</small><h2>${esc(data.name)} يدعوك</h2><p>جلسة ثنائية لمدة <strong>${num(data.minutes)} دقيقة</strong>. يمكنك الانضمام إلى غرفة الاستعداد الآن.</p><div class="direct-invite-actions"><button type="button" class="primary" data-action="acceptInvite">${icon('log-in')} انضم الآن</button><button type="button" class="plain" data-action="dismissInvite">ليس الآن</button></div></section>`;
+  dialog.showModal();
+  vibe();
+}
 const dialHandlePosition=progress=>{const angle=progress*3.6*Math.PI/180;return `left:${50+48*Math.sin(angle)}%;top:${50-48*Math.cos(angle)}%`;};
 function dial(text,label,progress=0,interactive=false) {
   return `<div class="orbit"><div class="dial ${interactive?'interactive-dial':''}" style="--progress:${progress}" ${interactive?'role="slider" aria-label="مدة الجلسة" aria-valuemin="5" aria-valuemax="180" aria-valuenow="'+chosen+'" tabindex="0"':''}>${interactive?`<span class="dial-handle" style="${dialHandlePosition(progress)}" aria-hidden="true"></span>`:''}<div class="dial-content">${icon('lock-keyhole')}<strong class="digits" id="digits">${text}</strong>${label?`<small id="dial-label">${label}</small>`:''}</div></div>
@@ -970,10 +978,11 @@ document.addEventListener('click',event=>{
   else if (action==='copyCode') {const field=document.querySelector('#invite-code');if(field)copyInvite('#invite-code','نُسخ رمز الغرفة.');else navigator.clipboard?.writeText(room?.code||'').then(()=>toast('نُسخ رمز الغرفة.'));}
   else if (action==='acceptInvite') {
     if (!incomingInvite || (room && room.phase!=='outcome')) return;
+    if(dialog.open)dialog.close();
     invite=incomingInvite.code; incomingInvite=null; inviteDismissed=false;
     revisited=room?.phase==='outcome'; tab='rooms'; render(true);
     window.scrollTo({top:0,behavior:'instant'});
-  } else if (action==='dismissInvite') { incomingInvite=null; render(true); }
+  } else if (action==='dismissInvite') { if(dialog.open)dialog.close();incomingInvite=null;render(true); }
   else if (action==='filter') { category=+value; render(true); }
   else if (action==='sound') sound(value);
   else if (action==='withdraw') modal('هل تريد الانسحاب؟','يُسجّل الانسحاب وتُخصم حتى ٢٠ نقطة من رصيدك.',button('confirmWithdraw','تأكيد الانسحاب','danger')+button('close','متابعة التركيز','secondary'));
@@ -1161,11 +1170,9 @@ socket.on('room', next=>{
   }
 });
 socket.on('directInvite', data=>{
-  incomingInvite=data;
   if (!room || room.phase==='outcome') {
     if (room?.phase==='outcome') revisited=true;
-    tab='rooms'; render(true);
-    window.scrollTo({top:0,behavior:'instant'});
+    showIncomingInvite(data);
   }
 });
 socket.on('signal',kind=>{
