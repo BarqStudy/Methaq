@@ -75,7 +75,7 @@ function emit(event,payload={}) {
   });
 }
 function avatar(person) {
-  const classes = 'avatar'+(person?.equipped?.frame ? ' gold-frame':'');
+  const classes = 'avatar'+(person?.equipped?.frame ? ' gold-frame':'')+(person?.tier==='pro'?' plan-ring-pro':person?.tier==='special'?' plan-ring-special':'');
   const photo = person?.photo;
   return photo && /^https:\/\//i.test(photo)
     ? '<img class="'+classes+'" src="'+esc(photo)+'" alt="" referrerpolicy="no-referrer">'
@@ -114,8 +114,8 @@ function decorationIcon() {
   return key ? '<span class="decoration-art" aria-hidden="true">'+icon(items[key][3])+'</span>' : '';
 }
 function membershipMark(tier){
-  if(tier==='pro')return `<span class="member-mark pro-mark" title="عضو برو" aria-label="عضو برو"><svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14"/><path class="member-stroke" d="M9.5 16.5l4.2 4.1 8.9-9.5"/></svg></span>`;
-  if(tier==='special')return `<span class="member-mark special-mark" title="عضو سبيشل" aria-label="عضو سبيشل"><svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14"/><path class="member-glyph" d="M8.8 13.3L16 7.8l7.2 5.5L16 24.2z"/><path class="member-stroke" d="M8.8 13.3h14.4M12.5 13.3L16 24.2l3.5-10.9M12.5 13.3L16 7.8l3.5 5.5"/></svg></span>`;
+  if(tier==='pro')return `<span class="member-mark pro-mark" title="عضو برو موثّق" aria-label="عضو برو موثّق"><svg viewBox="0 0 36 36" aria-hidden="true"><path class="badge-shell" d="M18 1.8l4 3.1 5-.2 1.5 4.7 4.2 2.8-1.7 4.7 1.7 4.7-4.2 2.8-1.5 4.7-5-.2-4 3.1-4-3.1-5 .2-1.5-4.7-4.2-2.8L5 16.9 3.3 12.2l4.2-2.8L9 4.7l5 .2z"/><path class="badge-core" d="M18 6.3l8.3 4.8v9.7L18 25.7l-8.3-4.9v-9.7z"/><path class="member-stroke" d="M12.7 17.2l3.3 3.1 7-7.2"/></svg></span>`;
+  if(tier==='special')return `<span class="member-mark special-mark" title="عضو سبيشل حصري" aria-label="عضو سبيشل حصري"><svg viewBox="0 0 36 36" aria-hidden="true"><path class="badge-shell" d="M18 1.5l4.1 5.1 6.4.9.9 6.4 5.1 4.1-5.1 4.1-.9 6.4-6.4.9-4.1 5.1-4.1-5.1-6.4-.9-.9-6.4L1.5 18l5.1-4.1.9-6.4 6.4-.9z"/><path class="badge-core" d="M9.3 14.2L18 7.9l8.7 6.3L18 28.1z"/><path class="badge-facet" d="M9.3 14.2h17.4M13.8 14.2L18 28.1l4.2-13.9M13.8 14.2L18 7.9l4.2 6.3"/></svg></span>`;
   return '';
 }
 function studentProfile() {
@@ -125,7 +125,7 @@ function studentProfile() {
   const temporary=(profile?.pointGrants||[]).reduce((sum,grant)=>sum+Number(grant.amount||0),0);
   return `<section class="panel student-profile" ${decorationStyle()}>
     ${decorationIcon()}
-    ${avatar({...user,equipped})}<div class="student-copy"><strong class="student-name">${esc(user?.name || 'ضيف ميثاق')} ${badge}</strong>
+    ${avatar({...user,equipped,tier})}<div class="student-copy"><strong class="student-name">${esc(user?.name || 'ضيف ميثاق')} ${badge}</strong>
     <small>${items[equipped?.title]?.[1] || 'رفيق تركيز'}</small>
     </div><div class="profile-points">${icon('sparkles')}<span><strong>${num(profile?.points)}</strong><small>نقطة${temporary?' · مؤقتة '+num(temporary):''}</small></span></div></section>`;
 }
