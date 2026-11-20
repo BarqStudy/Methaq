@@ -52,6 +52,7 @@ await db.exec(`
   CREATE INDEX IF NOT EXISTS point_grants_player_expiry ON point_grants(player,expires_at);
   CREATE TABLE IF NOT EXISTS room_pairs(room TEXT PRIMARY KEY,first_player TEXT NOT NULL,second_player TEXT NOT NULL,started_at BIGINT NOT NULL);
   CREATE INDEX IF NOT EXISTS room_pairs_players ON room_pairs(first_player,second_player);
+  CREATE TABLE IF NOT EXISTS outcome_views(room TEXT NOT NULL,player TEXT NOT NULL,seen_at BIGINT NOT NULL,PRIMARY KEY(room,player));
 `);
 const app = express();
 export const http = createServer(app);
@@ -235,6 +236,7 @@ async function finish(room, leaving) {
   if (!leaving) room.breakUntil = now+sessionBreak(room.minutes)*minute;
   for (const player of new Set([...room.members.map(p=>p.id),...rewarded])) io.to('player:'+player).emit('profile',await profile(player));
   await saveRoom(room,true);await send(room);
+  for(const member of room.members){if(io.sockets.adapter.rooms.get('player:'+member.id)?.size)await run('INSERT INTO outcome_views(room,player,seen_at) VALUES(?,?,?) ON CONFLICT(room,player) DO NOTHING',room.id,member.id,clock.now());}
 }
 
 async function tick(room, now) {
@@ -293,6 +295,7 @@ async function dismissOutcome(room,id){
   if(room?.phase!=='outcome')return;
   room.dismissed ||= [];
   if(!room.dismissed.includes(id))room.dismissed.push(id);
+  await run('INSERT INTO outcome_views(room,player,seen_at) VALUES(?,?,?) ON CONFLICT(room,player) DO NOTHING',room.id,id,clock.now());
   memberships.delete(id);
   const playerRoom='player:'+id;
   io.in(playerRoom).socketsLeave(room.id);
@@ -326,9 +329,14 @@ io.on('connection', async(socket) => {
   const current = () => rooms.get(memberships.get(id));
   const previous = current();
   if (previous) {
-    socket.join(previous.id);
-    await tick(previous,clock.now());
-    await send(previous);
+    const alreadySeen=previous.phase==='outcome'&&(await query('SELECT 1 FROM outcome_views WHERE room=? AND player=?',previous.id,id)||clock.now()-Number(previous.finished||0)>60000);
+    if(alreadySeen)await dismissOutcome(previous,id);
+    else{
+      socket.join(previous.id);
+      await tick(previous,clock.now());
+      await send(previous);
+      if(previous.phase==='outcome')await run('INSERT INTO outcome_views(room,player,seen_at) VALUES(?,?,?) ON CONFLICT(room,player) DO NOTHING',previous.id,id,clock.now());
+    }
   }
   const syncProfile=async()=>io.to(playerRoom).emit('profile',await profile(id));
   const isPaid=async player=>(await membership.planStatus(player)).tier!=='free';
@@ -715,6 +723,10 @@ io.on('connection', async(socket) => {
 });
 
 app.get('/health',async(_req,res)=>{try{await query('SELECT 1 AS ok');res.json({ok:true,database:db.kind,guests:dev});}catch{res.status(503).json({ok:false,database:db.kind});}});
+app.use((req,res,next)=>{
+  if(/\.(?:css|html|js)$/.test(req.path))res.set('Cache-Control','no-store, max-age=0');
+  next();
+});
 app.use('/icons',express.static('node_modules/lucide-static/icons'));
 app.use('/fonts',express.static('node_modules/@fontsource/ibm-plex-sans-arabic/files'));
 app.use(express.static('public'));
