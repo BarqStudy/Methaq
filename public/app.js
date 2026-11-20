@@ -84,7 +84,11 @@ function avatar(person) {
 function account() {
   const p = profile || {};
   document.querySelector('#admin-toggle').hidden = !p.admin || blocked;
-  document.querySelector('#upgrade-top').hidden = p.plan?.tier==='pro' || p.plan?.tier==='special';
+  const membershipControl=document.querySelector('#upgrade-top');
+  const tier=p.plan?.tier;
+  membershipControl.hidden=false;
+  membershipControl.classList.toggle('is-member',Boolean(tier&&tier!=='free'));
+  membershipControl.innerHTML=tier&&tier!=='free'?icon(plans[tier].icon)+' '+plans[tier].title:icon('crown')+' ترقية';
   const temporary=(p.pointGrants||[]).map(grant=>`<small class="point-expiry">+${num(grant.amount)} مؤقتة · ${remainingTime(grant.expiresAt)}</small>`).join('');
   const accountElement = document.querySelector('#account');
   const content = `<span class="metric streak-stat"><span class="metric-icon">${icon('flame')}</span><span>السلسلة <strong>${num(p.streak)}</strong></span></span>
@@ -141,7 +145,7 @@ function home() {
     <div class="durations" role="group" aria-label="مدة الجلسة">${durations.map(m=>`<button type="button" class="duration ${m===chosen?'on':''}" data-action="duration" data-value="${m}" aria-pressed="${m===chosen}"><strong>${num(m)}</strong> دقيقة${!durationAllowed(m)?icon('lock-keyhole'):''}</button>`).join('')}</div>`}
     <form class="panel form-main" id="session-form"><div class="panel-title"><span class="tile-icon">${icon('sliders-horizontal')}</span><div><h2>${joining?'انضم إلى الجلسة':'إعداد الجلسة'}</h2></div></div>
     <label class="field">هدف الجلسة <small class="optional">اختياري</small><input maxlength="160" name="goal" placeholder="ماذا ستنجز في هذه الجلسة؟" value="${esc(goal)}"></label>
-    <button class="primary wide">${icon(joining?'log-in':'circle-plus')}${joining?'الانضمام إلى الغرفة':'أنشئ غرفة وادعُ شريكك'}</button>
+    <button class="primary wide create-room-cta">${joining?icon('log-in'):'<span class="cta-cube" aria-hidden="true"><i></i><b></b><em></em></span>'}<span>${joining?'الانضمام إلى الغرفة':'ابدأ ميثاقك وأنشئ غرفة'}</span>${joining?'':'<small>وادعُ شريكك للتركيز معًا</small>'}</button>
     ${joining?button('ignore','العودة للرئيسية','plain'):''}</form>
     ${joining?'':`<form id="join-code-form" class="panel join-code"><label class="field">عندك رمز غرفة؟<input name="code" dir="ltr" maxlength="10" placeholder="رمز الغرفة" required></label><button class="secondary">${icon('log-in')} انضم بالرمز</button></form>`}
     <div class="pact-bar"><span class="tile-icon">${icon('shield-check')}</span><div><strong>ميثاق الجلسة</strong><p>عند الإتمام تمنح المنصة كل طرف ${num(rewards.achievement)} نقطة إنجاز.</p></div><span class="tag">${icon('sparkles')} مكافأة</span></div></div>`;
@@ -301,9 +305,9 @@ function store() {
   ${shopItems(category)}</div>`;
 }
 function inventoryPage(){
-  const owned=Object.entries(items).filter(([key,[group]])=>(profile?.inventory?.[key]||0)>0||(group===2&&profile?.cosmetics?.[key])||Object.values(profile?.equipped||{}).includes(key));
+  const owned=Object.entries(items).filter(([key,[group]])=>(group===2?Boolean(profile?.cosmetics?.[key]):(profile?.inventory?.[key]||0)>0)||Object.values(profile?.equipped||{}).includes(key));
   return `<div class="inner store-page">${heading('المخزون','كل مشترياتك وعناصرك في مكان واحد.')}
-    ${owned.length?`<div class="store-grid">${owned.map(([key,[group,label,,symbol,desc]])=>{const count=profile?.inventory?.[key]||0;const equipped=Object.values(profile?.equipped||{}).includes(key);return `<article class="panel inventory-item"><span class="art-plain" style="--art:${storeArt[key]}">${icon(symbol)}</span><div><h3>${label}</h3><p class="bodycopy">${desc}</p><span class="tag">${equipped?'مفعّل':group===2?'متاح':num(count)+' في المخزون'}</span></div>${[1,2,4].includes(group)?button('equip',equipped?'إلغاء التفعيل':'تفعيل','secondary','',key):''}</article>`;}).join('')}</div>`:'<section class="panel empty-state">'+icon('package-open')+'<h2>مخزونك فارغ</h2><p class="bodycopy">ستظهر هنا العناصر التي تشتريها من المتجر.</p></section>'}</div>`;
+    ${owned.length?`<div class="store-grid inventory-grid">${owned.map(([key,[group,label,,symbol,desc]])=>{const count=profile?.inventory?.[key]||0;const equipped=Object.values(profile?.equipped||{}).includes(key);const expiry=profile?.cosmetics?.[key];return `<article class="panel inventory-item"><div class="inventory-visual" style="--art:${storeArt[key]}"><span class="art-orbit"></span>${icon(symbol)}${icon('sparkles')}</div><div class="inventory-copy"><h3>${label}</h3><p class="bodycopy">${desc}</p><span class="tag">${equipped?'مفعّل':expiry?'متاح حتى '+new Date(expiry).toLocaleDateString('ar-SA'):num(count)+' في المخزون'}</span></div>${[1,2,4].includes(group)?button('equip',equipped?'إلغاء التفعيل':'استخدم','secondary','power',key):button('useInventory','استخدم قطعة واحدة','primary','play',key)}</article>`;}).join('')}</div>`:'<section class="panel empty-state">'+icon('package-open')+'<h2>مخزونك فارغ</h2><p class="bodycopy">ستظهر هنا العناصر التي تشتريها من المتجر.</p></section>'}</div>`;
 }
 function themes() {
   const current = specialties[profile?.equipped?.decoration];
@@ -833,6 +837,11 @@ document.addEventListener('click',event=>{
     changeAppearance({palette:value});
   }
   else if(action==='equip')toggleEquip(value);
+  else if(action==='useInventory'){
+    if(value==='shield'||value==='eraser')emit('protect',{item:value});
+    else if(value==='pause')emit('requestPause');
+    else if(['zap','coffee','horn'].includes(value))emit('signal',{item:value});
+  }
   else if(action==='quantityMinus'||action==='quantityPlus'){
     const input=b.closest('.buy-form')?.querySelector('[name="quantity"]');if(input)input.value=Math.max(1,Number(input.value||1)+(action==='quantityPlus'?1:-1));
   }
