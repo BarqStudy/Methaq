@@ -17,8 +17,8 @@ test('expires cosmetics and Pro, preserves Special, and records each verified ch
   assert.equal(await membership.validateCheckout(pro,{...payment,user:102}),false);assert.equal(await membership.validateCheckout(pro,payment),true);
   assert.equal(await membership.fulfill(pro,{...payment,currency:'USD'}),null);assert.equal(await membership.fulfill(pro,payment),'101');assert.equal(await membership.fulfill(pro,payment),null);
   const month=30*86400000;assert.deepEqual(await membership.planStatus('101'),{tier:'pro',until:now+month,trial:false});
-  const renewal=await membership.newInvoice('101','pro');await membership.fulfill(renewal,{...payment,charge:'renewal'});
-  assert.deepEqual(await membership.planStatus('101'),{tier:'pro',until:now+2*month,trial:false});now+=2*month;assert.equal((await membership.planStatus('101')).tier,'free');
+  const renewal=await membership.newInvoice('101','pro');assert.equal(await membership.validateCheckout(renewal,{...payment,charge:'renewal'}),false);assert.equal(await membership.fulfill(renewal,{...payment,charge:'renewal'}),null);
+  now+=month;assert.equal((await membership.planStatus('101')).tier,'free');
   const special=await membership.newInvoice('101','special');assert.equal(await membership.fulfill(special,{...payment,amount:250,charge:'lifetime'}),'101');
   now+=100*month;assert.deepEqual(await membership.planStatus('101'),{tier:'special',until:null,trial:false});
   assert.equal(await membership.startTrial('202'),true);assert.equal((await membership.planStatus('202')).trial,true);assert.equal(await membership.startTrial('202'),false);await db.close();

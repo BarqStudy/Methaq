@@ -492,7 +492,9 @@ io.on('connection', async(socket) => {
     if (!billingEnabled || !Object.hasOwn(plans,plan) || !paidPrices[plan] || id.startsWith('guest:')) {
       return ack({error:'شراء هذه العضوية غير متاح الآن.'});
     }
-    if ((await membership.planStatus(id)).tier === 'special') return ack({error:'عضوية سبيشل مفعّلة مدى الحياة.'});
+    const currentPlan=await membership.planStatus(id);
+    if (currentPlan.tier === 'special') return ack({error:'عضوية سبيشل مفعّلة مدى الحياة.'});
+    if (plan==='pro'&&currentPlan.tier==='pro') return ack({error:'يمكنك الاشتراك في برو مجددًا بعد انتهاء المدة الحالية.'});
     if (clock.now() < nextInvoiceAt) return ack({error:'انتظر قليلًا ثم حاول مجددًا.'});
     nextInvoiceAt = clock.now()+10000;
     const title = 'ميثاق التركيز · '+plans[plan].title;

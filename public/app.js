@@ -42,7 +42,7 @@ const icon = (name) => '<i aria-hidden="true" data-icon="'+name+'" style="--icon
 document.querySelectorAll('i[data-icon]').forEach(i => i.style.setProperty('--icon','url(/icons/'+i.dataset.icon+'.svg)'));
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num = (v) => Number(v || 0).toLocaleString('ar',{numberingSystem:'arab'});
-const remainingTime=value=>{const ms=Math.max(0,value-Date.now());const days=Math.floor(ms/86400000);const hours=Math.max(1,Math.ceil(ms/3600000));return days?num(days)+' يوم':num(hours)+' ساعة';};
+const remainingTime=(value,now=Date.now())=>{const minutes=Math.max(0,Math.ceil((value-now)/60000));const days=Math.floor(minutes/1440);const hours=Math.floor((minutes%1440)/60);const rest=minutes%60;return [days&&num(days)+' يوم',hours&&num(hours)+' ساعة',!days&&!hours&&num(rest)+' دقيقة'].filter(Boolean).join(' و ');};
 let room, socket, user, profile, bot, shortName, clockOffset = 0, chosen = 25, tab = 'home', category = 0, goal = '', pact = '', inviteDismissed = false;
 let viewKey, noticeTimeout, revisited, lastActivity = 0, lastCheck, audio, ambience;
 let preparingInvite = false, incomingInvite;
@@ -89,7 +89,7 @@ function account() {
   membershipControl.hidden=false;
   membershipControl.classList.toggle('is-member',Boolean(tier&&tier!=='free'));
   membershipControl.innerHTML=tier&&tier!=='free'?icon(plans[tier].icon)+' '+plans[tier].title:icon('crown')+' ترقية';
-  const temporary=(p.pointGrants||[]).map(grant=>`<small class="point-expiry">+${num(grant.amount)} مؤقتة · ${remainingTime(grant.expiresAt)}</small>`).join('');
+  const temporary=(p.pointGrants||[]).map(grant=>`<small class="point-expiry" data-point-expiry="${grant.expiresAt}" data-point-amount="${grant.amount}">−${num(grant.amount)} خلال <b>${remainingTime(grant.expiresAt)}</b></small>`).join('');
   const accountElement = document.querySelector('#account');
   const content = `<span class="metric streak-stat"><span class="metric-icon">${icon('flame')}</span><span>السلسلة <strong>${num(p.streak)}</strong></span></span>
     <span class="metric points-stat"><span class="metric-icon">${icon('sparkles')}</span><span>النقاط <strong>${num(p.points)}</strong>${temporary}</span></span>`;
@@ -113,13 +113,11 @@ function decorationIcon() {
 }
 function studentProfile() {
   const equipped = profile?.equipped;
-  const tier = profile?.plan?.tier;
   return `<section class="panel student-profile" ${decorationStyle()}>
     ${decorationIcon()}
     ${avatar({...user,equipped})}<div><strong>${esc(user?.name || 'ضيف ميثاق')}</strong>
     <small>${items[equipped?.title]?.[1] || 'رفيق تركيز'}</small>
-    </div>
-    ${tier && tier!=='free' ? button('seeMembership',plans[tier].title,'plain',plans[tier].icon) : ''}</section>`;
+    </div></section>`;
 }
 function pendingInvite() {
   if (!incomingInvite || isInvite()) return '';
@@ -280,11 +278,11 @@ function memberships() {
   const features={pro:['جلسات حتى ١٨٠ دقيقة','كل ثيمات التخصصات','ألوان مخصصة وشفافية الزجاج','استراحة محارب في كل جلسة'],special:['كل مزايا برو مدى الحياة','ثيم سبيشل الأبدي الحصري','شارة سبيشل بجانب اسمك','كل الثيمات المستقبلية دون شراء']};
   return `<section class="membership-section stack" id="memberships" aria-labelledby="membership-title">
     <div><h2 id="membership-title">عضويات ميثاق</h2><p class="bodycopy">اختر العضوية المناسبة لك، أو جرّب برو مجانًا لمدة ٣ أيام مرة واحدة.</p></div>
-    ${active==='pro' && until ? '<p class="bodycopy">برو مفعّل حتى '+new Date(until).toLocaleDateString('ar')+(profile.plan.trial?' · تجربة مجانية':'')+'</p>' : ''}
+    ${active==='pro' && until ? `<div class="membership-countdown"><span>${profile.plan.trial?'تجربة برو':'برو'} مفعّل حتى ${new Date(until).toLocaleDateString('ar-SA')}</span><strong data-membership-until="${until}">${remainingTime(until,serverNow())}</strong></div>` : ''}
     <div class="store-grid">${Object.entries(plans).map(([key,plan])=>{
       const price = profile?.prices?.[key];
       const status = active===key ? 'مفعّل' : active==='special' ? 'مشمول مع سبيشل' : '';
-      const action = price && active!=='special' ? button('checkout',key==='pro' && status?'تمديد برو':'اختيار '+plan.title,'primary','star',key) : '';
+      const action = price && active!=='special' && !(key==='pro'&&active==='pro') ? button('checkout','اختيار '+plan.title,'primary','star',key) : '';
       return `<article class="panel plan-card" style="--art:${plan.color}"><span class="art-plain">${icon(plan.icon)}</span>
         <h3>${plan.title}</h3><p>${plan.duration}</p><ul class="plan-features">${features[key].map(feature=>`<li>${icon('circle-check')} ${feature}</li>`).join('')}</ul>
         ${status?'<p class="mint">'+status+'</p>':''}
@@ -682,6 +680,9 @@ function formatClock(seconds) {
   return [Math.floor(seconds/60),seconds%60].map(value=>String(value).padStart(2,'0')).join(':');
 }
 function updateClock() {
+  const current=serverNow();
+  document.querySelectorAll('[data-point-expiry]').forEach(element=>{const label=element.querySelector('b');if(label)label.textContent=remainingTime(Number(element.dataset.pointExpiry),current);});
+  document.querySelectorAll('[data-membership-until]').forEach(element=>element.textContent=remainingTime(Number(element.dataset.membershipUntil),current));
   const rest = document.querySelector('#break-time');
   if (rest && room?.breakUntil) {
     const seconds = Math.max(0,Math.ceil((room.breakUntil-serverNow())/1000));
@@ -689,7 +690,7 @@ function updateClock() {
   }
   const digits = document.querySelector('#digits');
   if (!digits || tab!=='home' || room?.phase!=='active') return;
-  const now = serverNow();
+  const now = current;
   const counting = now < room.startsAt;
   const paused = now < room.pauseUntil;
   const remaining = Math.max(0,(counting?room.startsAt:paused?room.pauseUntil:room.endAt)-now);
