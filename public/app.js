@@ -43,7 +43,6 @@ document.querySelectorAll('i[data-icon]').forEach(i => i.style.setProperty('--ic
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num = (v) => Number(v || 0).toLocaleString('ar',{numberingSystem:'arab'});
 const remainingTime=(value,now=Date.now())=>{const minutes=Math.max(0,Math.ceil((value-now)/60000));const days=Math.floor(minutes/1440);const hours=Math.floor((minutes%1440)/60);const rest=minutes%60;return [days&&num(days)+' يوم',hours&&num(hours)+' ساعة',!days&&!hours&&num(rest)+' دقيقة'].filter(Boolean).join(' و ');};
-const pointCountdown=(value,now=Date.now())=>{const seconds=Math.max(0,Math.ceil((value-now)/1000));const days=Math.floor(seconds/86400);const clock=[Math.floor(seconds%86400/3600),Math.floor(seconds%3600/60),seconds%60].map(part=>String(part).padStart(2,'0')).join(':');return (days?num(days)+'ي ':'')+clock;};
 let room, socket, user, profile, bot, shortName, clockOffset = 0, chosen = 25, tab = 'home', category = 0, goal = '', pact = '', inviteDismissed = false;
 let viewKey, noticeTimeout, revisited, lastActivity = 0, lastCheck, audio, ambience;
 let preparingInvite = false, incomingInvite;
@@ -90,7 +89,7 @@ function account() {
   membershipControl.hidden=false;
   membershipControl.classList.toggle('is-member',Boolean(tier&&tier!=='free'));
   membershipControl.innerHTML=tier&&tier!=='free'?icon(plans[tier].icon)+' '+plans[tier].title:icon('crown')+' ترقية';
-  const temporary=(p.pointGrants||[]).map(grant=>`<small class="point-expiry" data-point-expiry="${grant.expiresAt}" data-point-amount="${grant.amount}">${icon('timer')}<span>−${num(grant.amount)}</span><b dir="ltr">${pointCountdown(grant.expiresAt)}</b></small>`).join('');
+  const temporary=(p.pointGrants||[]).map(grant=>`<small class="point-expiry" data-point-expiry="${grant.expiresAt}" data-point-amount="${grant.amount}">−${num(grant.amount)} خلال <b>${remainingTime(grant.expiresAt)}</b></small>`).join('');
   const accountElement = document.querySelector('#account');
   const content = `<span class="metric streak-stat"><span class="metric-icon">${icon('flame')}</span><span>السلسلة <strong>${num(p.streak)}</strong></span></span>
     <span class="metric points-stat"><span class="metric-icon">${icon('sparkles')}</span><span>النقاط <strong>${num(p.points)}</strong>${temporary}</span></span>`;
@@ -682,7 +681,7 @@ function formatClock(seconds) {
 }
 function updateClock() {
   const current=serverNow();
-  document.querySelectorAll('[data-point-expiry]').forEach(element=>{const label=element.querySelector('b');if(label)label.textContent=pointCountdown(Number(element.dataset.pointExpiry),current);});
+  document.querySelectorAll('[data-point-expiry]').forEach(element=>{const label=element.querySelector('b');if(label)label.textContent=remainingTime(Number(element.dataset.pointExpiry),current);});
   document.querySelectorAll('[data-membership-until]').forEach(element=>element.textContent=remainingTime(Number(element.dataset.membershipUntil),current));
   const rest = document.querySelector('#break-time');
   if (rest && room?.breakUntil) {
