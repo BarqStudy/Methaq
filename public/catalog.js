@@ -1,4 +1,4 @@
-export const sections = ['الحماية والوقت','الأجواء والثيمات','الألقاب والشارات','التفاعلات','الثيمات والتخصصات'];
+export const sections = ['الحماية والوقت','الأجواء والثيمات','الألقاب والشارات','التفاعلات','الثيمات والتخصصات','احتفاليات الإنجاز'];
 export const specialties = {
   medic: ['الطب','stethoscope','#48c7b8','#91d5e9'],
   engineer: ['الهندسة','drafting-compass','#eeb36f','#c998ef'],
@@ -33,6 +33,12 @@ export const items = {
   zap: [3,'صعقة التركيز',30,'zap','إشارة اهتزاز إضافية خلال الجلسة.'],
   horn: [3,'بوق الفوز',35,'megaphone','احتفل مع شريكك بعد النجاح.'],
   coffee: [3,'كوب قهوة',40,'coffee','أرسل بطاقة قهوة لشريكك أثناء الجلسة.'],
+  celebrate_confetti: [5,'مهرجان القصاصات',70,'party-popper','قصاصات ملونة تنفجر حول إنجازك.'],
+  celebrate_stars: [5,'مجرة النجوم',85,'sparkles','نجوم لامعة تدور حول بطاقة الإنجاز.'],
+  celebrate_petals: [5,'بتلات النجاح',90,'flower-2','بتلات هادئة تتساقط احتفالًا بإنجازك.'],
+  celebrate_rocket: [5,'انطلاقة الصاروخ',110,'rocket','صاروخ ينطلق بقوة بعد إتمام الجلسة.'],
+  celebrate_crown: [5,'تتويج المنجز',130,'crown','لحظة تتويج ذهبية تليق بصمودك.'],
+  celebrate_aurora: [5,'شفق الإنجاز',150,'wand-sparkles','موجات شفق وأضواء ساحرة تملأ الشاشة.'],
   ...Object.fromEntries(Object.entries(specialties).map(([id,[name,icon]]) =>
     [id,[4,name,95,icon,'أجواء '+name+' وزخارفه على كامل المنصة.']]))
 };
@@ -60,7 +66,7 @@ export const storeArt = {
   shield:'#65dfba', marathon:'#ffbb78', pause:'#e9a1cb', eraser:'#ac9cf6',
   rain:'#80bfff', cafe:'#f2be87', forest:'#91db9c', fire:'#ff976f',
   scholar:'#a6a5ff', owl:'#b5a1eb', steadfast:'#f9bf70', frame:'#f8d080',
-  zap:'#f6dc65', horn:'#ef91b9', coffee:'#dfae8d',
+  zap:'#f6dc65', horn:'#ef91b9', coffee:'#dfae8d',celebrate_confetti:'#ff8fa8',celebrate_stars:'#8ca8ff',celebrate_petals:'#f3a9d0',celebrate_rocket:'#ff9a68',celebrate_crown:'#e9b64f',celebrate_aurora:'#9d8cff',
   ...Object.fromEntries(Object.entries(specialties).map(([id,[,,color]])=>[id,color]))
 };
 

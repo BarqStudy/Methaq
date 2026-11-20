@@ -81,6 +81,15 @@ test('runs Telegram invitations, admin changes, custom appearance, and referral 
   assert.equal(free.plan.tier,'free');
   assert.equal(free.appearance.palette,'emerald');
   assert.equal(free.equipped.decoration,undefined);
+  const celebrationPoints=once(host,'profile');
+  assert.deepEqual(await command(host,'adminPoints',{student:'101',points:100}),{ok:true});
+  assert.equal((await celebrationPoints)[0].points,100);
+  const celebrationPurchase=once(host,'profile');
+  assert.deepEqual(await command(host,'buy',{item:'celebrate_stars'}),{ok:true});
+  assert.equal((await celebrationPurchase)[0].inventory.celebrate_stars,1);
+  const celebrationEquip=once(host,'profile');
+  assert.deepEqual(await command(host,'equip',{item:'celebrate_stars'}),{ok:true});
+  assert.equal((await celebrationEquip)[0].equipped.celebration,'celebrate_stars');
   const created = once(host,'room');
   assert.deepEqual(await command(host,'create',{minutes:25,goal:'مراجعة الدرس'}),{ok:true});
   const [room] = await created;
@@ -121,7 +130,7 @@ test('runs Telegram invitations, admin changes, custom appearance, and referral 
   clock.now = () => started.endAt+1;
   const [hostResult] = await hostReward;
   const [recipientResult] = await recipientReward;
-  assert.equal(hostResult.points,145);
+  assert.equal(hostResult.points,160);
   assert.equal(recipientResult.points,195);
   assert.equal(hostResult.referralBonus,100);
   assert.equal(hostResult.referrals.rewarded,1);

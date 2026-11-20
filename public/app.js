@@ -380,7 +380,7 @@ function store() {
 function inventoryPage(){
   const owned=Object.entries(items).filter(([key,[group]])=>(group===2?Boolean(profile?.cosmetics?.[key]):(profile?.inventory?.[key]||0)>0)||Object.values(profile?.equipped||{}).includes(key));
   return `<div class="inner store-page">${heading('المخزون','كل مشترياتك وعناصرك في مكان واحد.')}
-    ${owned.length?`<div class="store-grid inventory-grid">${owned.map(([key,[group,label,,symbol,desc]])=>{const count=profile?.inventory?.[key]||0;const equipped=Object.values(profile?.equipped||{}).includes(key);const expiry=profile?.cosmetics?.[key];return `<article class="panel inventory-item"><div class="inventory-visual" style="--art:${storeArt[key]}"><span class="art-orbit"></span>${icon(symbol)}${icon('sparkles')}</div><div class="inventory-copy"><h3>${label}</h3><p class="bodycopy">${desc}</p><span class="tag">${equipped?'مفعّل':expiry?'متاح حتى '+new Date(expiry).toLocaleDateString('ar-SA'):num(count)+' في المخزون'}</span></div>${[1,2,4].includes(group)?button('equip',equipped?'إلغاء التفعيل':'استخدم','secondary','power',key):button('useInventory','استخدم قطعة واحدة','primary','play',key)}</article>`;}).join('')}</div>`:'<section class="panel empty-state">'+icon('package-open')+'<h2>مخزونك فارغ</h2><p class="bodycopy">ستظهر هنا العناصر التي تشتريها من المتجر.</p></section>'}</div>`;
+    ${owned.length?`<div class="store-grid inventory-grid">${owned.map(([key,[group,label,,symbol,desc]])=>{const count=profile?.inventory?.[key]||0;const equipped=Object.values(profile?.equipped||{}).includes(key);const expiry=profile?.cosmetics?.[key];return `<article class="panel inventory-item"><div class="inventory-visual" style="--art:${storeArt[key]}"><span class="art-orbit"></span>${icon(symbol)}${icon('sparkles')}</div><div class="inventory-copy"><h3>${label}</h3><p class="bodycopy">${desc}</p><span class="tag">${equipped?'مفعّل':expiry?'متاح حتى '+new Date(expiry).toLocaleDateString('ar-SA'):num(count)+' في المخزون'}</span></div>${[1,2,4,5].includes(group)?button('equip',equipped?'إلغاء التفعيل':'استخدم','secondary','power',key):button('useInventory','استخدم قطعة واحدة','primary','play',key)}</article>`;}).join('')}</div>`:'<section class="panel empty-state">'+icon('package-open')+'<h2>مخزونك فارغ</h2><p class="bodycopy">ستظهر هنا العناصر التي تشتريها من المتجر.</p></section>'}</div>`;
 }
 function themes() {
   const current = specialties[profile?.equipped?.decoration];
@@ -393,15 +393,16 @@ function themes() {
 }
 function shopItems(groupIndex) {
   const p = profile;
-  return `<p class="bodycopy section-rule">${icon('layers')} ${[1,2,4].includes(groupIndex)?'في هذا القسم يُفعّل منتج واحد فقط.':'في هذا القسم يُستخدم منتج واحد في كل مرة.'}</p>
+  return `<p class="bodycopy section-rule">${icon('layers')} ${[1,2,4,5].includes(groupIndex)?'في هذا القسم يُفعّل منتج واحد فقط.':'في هذا القسم يُستخدم منتج واحد في كل مرة.'}</p>
     <div class="store-grid product-grid">${Object.entries(items).filter(([key,x])=>key!=='marathon' && x[0]===groupIndex).map(([key,[group,label,cost,symbol,desc]])=>{
     const count = p?.inventory[key] || 0;
     const expires = p?.cosmetics?.[key];
-    const collectible = [1,2,4].includes(group);
+    const collectible = [1,2,4,5].includes(group);
     const specialLocked=specialOnly.has(key)&&profile?.plan?.tier!=='special';
-    const available = !specialLocked&&collectible && (isPaid() || (group===2 ? expires : count));
+    const included=[1,2,4].includes(group)&&isPaid();
+    const available = !specialLocked&&collectible && (included || (group===2 ? expires : count));
     const equipped = Object.values(p?.equipped || {}).includes(key);
-    const detail = specialLocked?'حصري لعضوية سبيشل':collectible && isPaid() ? 'مشمول في العضوية' : group===2 && expires
+    const detail = specialLocked?'حصري لعضوية سبيشل':included ? 'مشمول في العضوية' : group===2 && expires
       ? 'متاح حتى '+new Date(expires).toLocaleDateString('ar') : num(cost)+' نقطة'+(group===2?' · صالح ٣ أيام':count?' · في المخزون '+num(count):'');
     return `<article class="panel store-item">
       <div class="store-art art-${key}" style="--art:${storeArt[key]}"><span aria-hidden="true" class="art-orbit"></span>${icon(symbol)}${icon('sparkles')}</div>
@@ -596,7 +597,7 @@ dialog.addEventListener('submit',async event=>{
 async function toggleEquip(item) {
   if(!profile?.equipped||!items[item])return;
   const category=items[item][0];
-  const slot=category===4?'decoration':category===1?'theme':item==='frame'?'frame':'title';
+  const slot=category===5?'celebration':category===4?'decoration':category===1?'theme':item==='frame'?'frame':'title';
   const previous={...profile.equipped};
   profile.equipped={...profile.equipped,[slot]:profile.equipped[slot]===item?null:item};
   if(category===2&&profile.equipped[slot])delete profile.equipped[slot==='title'?'frame':'title'];
@@ -843,6 +844,18 @@ function showGiftMoment(data={}) {
   vibe();
   setTimeout(()=>{moment.classList.add('leaving');setTimeout(()=>moment.remove(),450);},3400);
 }
+function showSessionCelebration(){
+  document.querySelector('.session-celebration')?.remove();
+  const equipped=profile?.equipped?.celebration;
+  const key=items[equipped]?.[0]===5?equipped:'celebrate_confetti';
+  const [,label,,symbol]=items[key];
+  const overlay=document.createElement('div');
+  overlay.className='session-celebration';
+  overlay.dataset.celebration=key.replace('celebrate_','');
+  overlay.innerHTML=`<div class="celebration-particles" aria-hidden="true">${Array.from({length:30},(_,index)=>`<i style="--i:${index};--x:${(index*37)%100-50}vw"></i>`).join('')}</div><section class="celebration-card" role="dialog" aria-modal="true" aria-labelledby="celebration-title"><div class="celebration-rings" aria-hidden="true"></div><span class="celebration-icon">${icon(symbol)}</span><small>ميثاق مكتمل</small><h2 id="celebration-title">أحسنتم! أتممتما الجلسة</h2><p>صمدتما معًا حتى نهاية المؤقت. لحظة إنجاز تستحق الاحتفال.</p><strong>${label}</strong><button type="button" class="primary" data-action="closeCelebration">${icon('trophy')} عرض النتيجة</button></section>`;
+  document.body.append(overlay);
+  tg?.HapticFeedback?.notificationOccurred?.('success');
+}
 function inviteUrl() {
   return roomInviteUrl({ bot, shortName, code:room.id, guestOrigin:tg?.initData ? null : location.origin });
 }
@@ -938,6 +951,7 @@ document.addEventListener('click',event=>{
   } else if(action==='tourPrevious'){tourIndex=Math.max(0,tourIndex-1);showTourStep();}
   else if(action==='tourSkip')endTour(true);
   else if(action==='startTour')startTour();
+  else if(action==='closeCelebration')document.querySelector('.session-celebration')?.remove();
   else if (action==='duration') {
     if (!durationAllowed(+value)) return premiumDuration(+value);
     chosen=+value; render(true);
@@ -1162,6 +1176,7 @@ socket.on('room', next=>{
     tab='home';
   }
   render();
+  if(previous?.phase==='active'&&next?.phase==='outcome'&&next.outcomeType==='success')setTimeout(showSessionCelebration,220);
   if (tab==='home' && (previous?.id!==next?.id || previous?.phase!==next?.phase)) {
     window.scrollTo({top:0,behavior:'instant'});
   }

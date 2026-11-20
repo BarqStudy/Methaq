@@ -235,6 +235,7 @@ async function finish(room, leaving) {
     }
   });
   room.phase = 'outcome';
+  room.outcomeType=leaving?'withdrawal':'success';
   room.finished = now;
   if (!leaving) room.breakUntil = now+sessionBreak(room.minutes)*minute;
   for (const player of new Set([...room.members.map(p=>p.id),...rewarded])) io.to('player:'+player).emit('profile',await profile(player));
@@ -662,7 +663,7 @@ io.on('connection', async(socket) => {
     const stackable = category===0 || category===3;
     if (!Number.isSafeInteger(quantity) || quantity<1 || (!stackable && quantity!==1) || !Number.isSafeInteger(total)) fail('الكمية غير صالحة.');
     if (points < total) fail('رصيدك لا يكفي لهذا العنصر.');
-    if (([1,4].includes(category) && inventory[item]) || (category === 2 && cosmetics[item])) fail('هذا العنصر موجود في مخزونك.');
+    if (([1,4,5].includes(category) && inventory[item]) || (category === 2 && cosmetics[item])) fail('هذا العنصر موجود في مخزونك.');
     const nextCount = category===2 ? 1 : (inventory[item] || 0)+quantity;
     if (!Number.isSafeInteger(nextCount)) fail('الكمية غير صالحة.');
     inventory[item] = nextCount;
@@ -674,13 +675,13 @@ io.on('connection', async(socket) => {
     await syncProfile();
   });
   action('equip', async({item}) => {
-    if (!Object.hasOwn(items,item) || ![1,2,4].includes(items[item][0])) fail('العنصر غير متاح.');
+    if (!Object.hasOwn(items,item) || ![1,2,4,5].includes(items[item][0])) fail('العنصر غير متاح.');
     const { inventory,cosmetics } = await profile(id);
     if(specialOnly.has(item)&&(await membership.planStatus(id)).tier!=='special')fail('هذا الثيم حصري لعضوية سبيشل.');
     const category = items[item][0];
-    if (!await isPaid(id) && !(category === 2 ? cosmetics[item] : inventory[item])) fail('العنصر غير متاح.');
+    if (!([1,2,4].includes(category)&&await isPaid(id)) && !(category === 2 ? cosmetics[item] : inventory[item])) fail('العنصر غير متاح.');
     const equipped = JSON.parse((await query('SELECT equipped FROM players WHERE id=?',id)).equipped);
-    const slot = category === 4 ? 'decoration' : category === 1 ? 'theme' : item === 'frame' ? 'frame' : 'title';
+    const slot = category === 5 ? 'celebration' : category === 4 ? 'decoration' : category === 1 ? 'theme' : item === 'frame' ? 'frame' : 'title';
     if (equipped[slot]===item) equipped[slot]=null;
     else {
       if (category===2) delete equipped[slot==='title'?'frame':'title'];
