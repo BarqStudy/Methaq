@@ -1,10 +1,29 @@
 {
-  "name":"methaq",
-  "version":"1.0.0",
-  "private":true,
-  "type":"module",
-  "engines":{"node":">=24"},
-  "scripts":{"start":"node --env-file-if-exists=.env server.js","dev":"node --watch --env-file-if-exists=.env server.js","build":"tailwindcss -i styles.css -o public/utilities.css --minify","postinstall":"npm run build","test":"node --test"},
-  "dependencies":{"@fontsource/ibm-plex-sans-arabic":"^5.2.8","express":"^5.1.0","lucide-static":"^0.468.0","socket.io":"^4.8.1","telegraf":"^4.16.3"},
-  "devDependencies":{"@tailwindcss/cli":"^4.1.0","tailwindcss":"^4.1.0","socket.io-client":"^4.8.1"}
+  "name": "methaq",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env server.js",
+    "dev": "node --watch --env-file-if-exists=.env server.js",
+    "build": "tailwindcss -i styles.css -o public/utilities.css --minify",
+    "postinstall": "npm run build",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@fontsource/ibm-plex-sans-arabic": "^5.2.8",
+    "express": "^5.1.0",
+    "lucide-static": "^0.468.0",
+    "pg": "^8.23.1",
+    "socket.io": "^4.8.1",
+    "telegraf": "^4.16.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.1.0",
+    "socket.io-client": "^4.8.1",
+    "tailwindcss": "^4.1.0"
+  }
 }

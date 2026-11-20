@@ -1,14 +1,12 @@
 import express from 'express';
 import { createServer } from 'node:http';
 import { createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
-import { DatabaseSync } from 'node:sqlite';
-import { mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
 import { Server } from 'socket.io';
 import { Telegraf, Markup } from 'telegraf';
 import { items,glassRange,palettes,plans,rewards,successReward,durations,referralPoints,breakMinutes } from './public/catalog.js';
 import { createMembership,paidPrices } from './membership.js';
 import { roomInviteUrl } from './public/invite.js';
+import { createDatabase } from './database.js';
 
 const { BOT_TOKEN, BOT_USERNAME, APP_SHORT_NAME, PUBLIC_URL } = process.env;
 const telegramIdPattern = /^[1-9][0-9]{0,15}$/;
@@ -31,24 +29,22 @@ function adminAccess(id) {
 const bot = BOT_TOKEN ? new Telegraf(BOT_TOKEN) : null;
 const dev = process.env.NODE_ENV !== 'production' &&
   (process.env.DEV_GUESTS === '1' || (!BOT_TOKEN && process.env.DEV_GUESTS === undefined));
-const dbPath = process.env.DATABASE_PATH || 'data/methaq.sqlite';
-if (dbPath !== ':memory:') mkdirSync(dirname(dbPath), { recursive: true });
-const db = new DatabaseSync(dbPath);
-db.exec(`
-  PRAGMA journal_mode = WAL;
+const db=await createDatabase();
+await db.exec(`
   CREATE TABLE IF NOT EXISTS referrals (
     invitee TEXT PRIMARY KEY, inviter TEXT NOT NULL, rewarded_room TEXT
   );
   CREATE INDEX IF NOT EXISTS referrals_inviter ON referrals(inviter);
   CREATE TABLE IF NOT EXISTS referral_codes(player TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE);
   CREATE TABLE IF NOT EXISTS telegram_students(id TEXT PRIMARY KEY,name TEXT NOT NULL,handle TEXT);
-  CREATE TABLE IF NOT EXISTS banned_students(id TEXT PRIMARY KEY, banned_by TEXT NOT NULL, banned_at INTEGER NOT NULL);
+  CREATE TABLE IF NOT EXISTS banned_students(id TEXT PRIMARY KEY, banned_by TEXT NOT NULL, banned_at BIGINT NOT NULL);
   CREATE TABLE IF NOT EXISTS players(id TEXT PRIMARY KEY, points INTEGER DEFAULT 0, streak INTEGER DEFAULT 0,
     last_day TEXT, inventory TEXT DEFAULT '{}', equipped TEXT DEFAULT '{}');
   CREATE TABLE IF NOT EXISTS results(room TEXT, player TEXT, status TEXT, reward INTEGER, minutes INTEGER,
-    date TEXT DEFAULT CURRENT_TIMESTAMP, goal_done INTEGER, forgiven INTEGER DEFAULT 0, old_streak INTEGER DEFAULT 0,
+    date TEXT DEFAULT '', goal_done INTEGER, forgiven INTEGER DEFAULT 0, old_streak INTEGER DEFAULT 0,
     PRIMARY KEY(room,player));
   CREATE INDEX IF NOT EXISTS results_player_date ON results(player,date);
+  CREATE TABLE IF NOT EXISTS live_rooms(id TEXT PRIMARY KEY,state TEXT NOT NULL,updated_at BIGINT NOT NULL);
 `);
 const app = express();
 export const http = createServer(app);
@@ -57,74 +53,72 @@ const rooms = new Map();
 const memberships = new Map();
 const minute = 60000;
 export const clock = { now: Date.now };
-const membership = createMembership(db,() => clock.now());
+const membership = await createMembership(db,() => clock.now());
 const billingEnabled = Boolean(bot && Object.values(paidPrices).some(Boolean));
 const fail = (message) => { throw new Error(message); };
-const query = (sql, ...args) => db.prepare(sql).get(...args);
-const run = (sql, ...args) => db.prepare(sql).run(...args);
-const transaction = (fn) => {
-  db.exec('BEGIN');
-  try { const result = fn(); db.exec('COMMIT'); return result; } catch (error) { db.exec('ROLLBACK'); throw error; }
-};
+const query=(sql,...args)=>db.query(sql,...args);
+const run=(sql,...args)=>db.run(sql,...args);
+const transaction=fn=>db.transaction(fn);
 
 // Marathon tickets were replaced by membership access. Refund any remaining inventory once.
-run(`UPDATE players SET points=points+CAST(json_extract(inventory,'$.marathon') AS INTEGER)*?,
-  inventory=json_remove(inventory,'$.marathon') WHERE json_extract(inventory,'$.marathon')>0`,items.marathon[2]);
+for(const player of await db.all('SELECT id,inventory FROM players')) {
+  const inventory=JSON.parse(player.inventory||'{}');
+  if(inventory.marathon>0){await run('UPDATE players SET points=points+?,inventory=? WHERE id=?',inventory.marathon*items.marathon[2],JSON.stringify({...inventory,marathon:undefined}),player.id);}
+}
 
-const isBanned = (id) => Boolean(query('SELECT 1 FROM banned_students WHERE id=?',id));
-const studentRows = db.prepare(`SELECT id,name,handle FROM telegram_students
-  WHERE ?='' OR id=? OR instr(lower(name),?)>0 OR instr(coalesce(handle,''),?)>0
-  ORDER BY name,id LIMIT 30`);
+const isBanned=async id=>Boolean(await query('SELECT 1 FROM banned_students WHERE id=?',id));
+const findStudents=(phrase)=>db.all(`SELECT id,name,handle FROM telegram_students
+  WHERE ?='' OR id=? OR lower(name) LIKE ? OR coalesce(handle,'') LIKE ? ORDER BY name,id LIMIT 30`,phrase,phrase,'%'+phrase+'%','%'+phrase+'%');
 const bannedMessage = 'حُظر هذا الحساب من استخدام ميثاق.';
-function updatePlayer(id) {
-  if (!query('SELECT 1 FROM players WHERE id=?',id)) return;
-  io.to('player:'+id).emit('profile',profile(id));
+async function updatePlayer(id) {
+  if (!await query('SELECT 1 FROM players WHERE id=?',id)) return;
+  io.to('player:'+id).emit('profile',await profile(id));
   const room = rooms.get(memberships.get(id));
-  if (room) send(room);
+  if (room) await send(room);
 }
 
-function canRefer(id, inviter) {
+async function canRefer(id, inviter) {
   return id!==inviter && telegramIdPattern.test(id) && telegramIdPattern.test(inviter) &&
-    !query("SELECT 1 FROM results WHERE player=? AND status='success' LIMIT 1",id);
+    !await query("SELECT 1 FROM results WHERE player=? AND status='success' LIMIT 1",id);
 }
 
-function referralCode(id) {
-  let row = query('SELECT code FROM referral_codes WHERE player=?',id);
+async function referralCode(id) {
+  let row = await query('SELECT code FROM referral_codes WHERE player=?',id);
   while (!row) {
     const code = 'REF-'+randomBytes(5).toString('hex').toUpperCase();
-    run('INSERT OR IGNORE INTO referral_codes(player,code) VALUES(?,?)',id,code);
-    row = query('SELECT code FROM referral_codes WHERE player=?',id);
+    await run('INSERT INTO referral_codes(player,code) VALUES(?,?) ON CONFLICT DO NOTHING',id,code);
+    row = await query('SELECT code FROM referral_codes WHERE player=?',id);
   }
   return row.code;
 }
 
-function analytics(id) {
+async function analytics(id) {
   const now = clock.now();
   const days = Array.from({length:7},(_,i)=>new Date(now-(6-i)*86400000).toISOString().slice(0,10));
-  const activity = db.prepare(`SELECT substr(date,1,10) AS day, sum(minutes) AS minutes
-    FROM results WHERE player=? AND status='success' AND date>=? GROUP BY day`).all(id,days[0]);
-  const outbound = query('SELECT count(*) AS invited,count(rewarded_room) AS rewarded FROM referrals WHERE inviter=?',id);
+  const activity = await db.all(`SELECT substr(date,1,10) AS day, sum(minutes) AS minutes
+    FROM results WHERE player=? AND status='success' AND date>=? GROUP BY day`,id,days[0]);
+  const outbound = await query('SELECT count(*) AS invited,count(rewarded_room) AS rewarded FROM referrals WHERE inviter=?',id);
   return {
-    weekly: days.map(day=>({day,minutes:activity.find(entry=>entry.day===day)?.minutes || 0})),
-    referrals: { ...outbound, code:query('SELECT code FROM referral_codes WHERE player=?',id)?.code,
-      linked:Boolean(query('SELECT 1 FROM referrals WHERE invitee=?',id)) }
+    weekly: days.map(day=>({day,minutes:Number(activity.find(entry=>entry.day===day)?.minutes || 0)})),
+    referrals: { invited:Number(outbound.invited),rewarded:Number(outbound.rewarded),code:(await query('SELECT code FROM referral_codes WHERE player=?',id))?.code,
+      linked:Boolean(await query('SELECT 1 FROM referrals WHERE invitee=?',id)) }
   };
 }
 
-function profile(id, includeAnalytics=true) {
-  const player = query('SELECT * FROM players WHERE id=?', id);
-  const stats = query(`SELECT count(*) FILTER (WHERE status='success') AS completed,
+async function profile(id, includeAnalytics=true) {
+  const player = await query('SELECT * FROM players WHERE id=?', id);
+  const stats = await query(`SELECT count(*) FILTER (WHERE status='success') AS completed,
     coalesce(sum(minutes) FILTER (WHERE status='success'),0) AS minutes,
     count(*) FILTER (WHERE status='left' AND forgiven=0) AS left
     FROM results WHERE player=?`, id);
-  const history = db.prepare('SELECT * FROM results WHERE player=? ORDER BY date DESC,rowid DESC LIMIT 20').all(id);
+  const history = await db.all('SELECT * FROM results WHERE player=? ORDER BY date DESC LIMIT 20',id);
   const today = new Date(clock.now()).toISOString().slice(0,10);
   const yesterday = new Date(clock.now()-86400000).toISOString().slice(0,10);
   const streak = [today,yesterday].includes(player.last_day) ? player.streak : 0;
-  const plan = membership.planStatus(id);
-  const cosmetics = membership.cosmetics(id);
-  const appearance = membership.appearance(id);
-  if (plan.tier!=='free') appearance.custom = membership.customPalette(id);
+  const plan = await membership.planStatus(id);
+  const cosmetics = await membership.cosmetics(id);
+  const appearance = await membership.appearance(id);
+  if (plan.tier!=='free') appearance.custom = await membership.customPalette(id);
   const inventory = JSON.parse(player.inventory);
   const equipped = JSON.parse(player.equipped);
   if (plan.tier === 'free') {
@@ -137,15 +131,16 @@ function profile(id, includeAnalytics=true) {
   if (equipped.title && equipped.frame) delete equipped.frame;
   return { ...player, streak, inventory, equipped, plan, cosmetics, appearance, now:clock.now(),
     admin:admins.has(id), adminAccess:adminAccess(id), prices:billingEnabled && !id.startsWith('guest:') ? paidPrices : {},
-    referralBonus:query('SELECT count(*) AS referrals FROM referrals WHERE rewarded_room IS NOT NULL AND (inviter=? OR invitee=?)',id,id).referrals*referralPoints,
-    ...(includeAnalytics ? analytics(id) : {}), ...stats, reliability: stats.completed + stats.left ? Math.round(100*stats.completed/(stats.completed+stats.left)) : 100, history };
+    referralBonus:Number((await query('SELECT count(*) AS referrals FROM referrals WHERE rewarded_room IS NOT NULL AND (inviter=? OR invitee=?)',id,id)).referrals)*referralPoints,
+    ...(includeAnalytics ? await analytics(id) : {}), completed:Number(stats.completed),minutes:Number(stats.minutes),left:Number(stats.left),
+    reliability: Number(stats.completed)+Number(stats.left) ? Math.round(100*Number(stats.completed)/(Number(stats.completed)+Number(stats.left))) : 100, history };
 }
 
-function use(id, item) {
-  const { inventory } = profile(id);
+async function use(id, item) {
+  const { inventory } = await profile(id);
   if (!inventory[item]) fail('هذا العنصر غير متوفر في مخزونك.');
   inventory[item]--;
-  run('UPDATE players SET inventory=? WHERE id=?', JSON.stringify(inventory), id);
+  await run('UPDATE players SET inventory=? WHERE id=?', JSON.stringify(inventory), id);
 }
 
 function authenticate(auth = {}) {
@@ -167,32 +162,35 @@ function authenticate(auth = {}) {
   fail('افتح ميثاق التركيز من تطبيق تليجرام.');
 }
 
-function send(room) {
-  io.to(room.id).emit('room', { ...room, now: clock.now(), members: room.members.map(member => {
-    const { equipped } = profile(member.id,false);
-    return { ...member, equipped };
-  }) });
+async function saveRoom(room) {
+  await run(`INSERT INTO live_rooms(id,state,updated_at) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET state=excluded.state,updated_at=excluded.updated_at`,room.id,JSON.stringify(room),clock.now());
 }
 
-function finish(room, leaving) {
+async function send(room) {
+  await saveRoom(room);
+  const members=await Promise.all(room.members.map(async member=>({...member,equipped:(await profile(member.id,false)).equipped})));
+  io.to(room.id).emit('room',{...room,now:clock.now(),members});
+}
+
+async function finish(room, leaving) {
   if (room.phase !== 'active') return;
   const now = clock.now();
   const rewarded = new Set();
-  transaction(() => {
+  await transaction(async() => {
     for (const p of room.members) {
-      const current = profile(p.id);
+      const current = await profile(p.id);
       const status = !leaving ? 'success' : leaving === p.id ? 'left' : 'steadfast';
       const reward = status === 'success' ? successReward : status === 'left' ? -Math.min(rewards.withdrawal,current.points) : rewards.steadfast;
       const today = new Date(now).toISOString().slice(0,10);
       const streak = status === 'success' ? current.streak + Number(current.last_day !== today) : status === 'left' ? 0 : current.streak;
-      run('UPDATE players SET points=points+?, streak=?, last_day=? WHERE id=?', reward, streak, status === 'success' ? today : current.last_day, p.id);
+      await run('UPDATE players SET points=points+?, streak=?, last_day=? WHERE id=?', reward, streak, status === 'success' ? today : current.last_day, p.id);
       const date = new Date(now).toISOString().replace('T',' ').slice(0,19);
-      run('INSERT INTO results(room,player,status,reward,minutes,old_streak,date) VALUES(?,?,?,?,?,?,?)',room.id,p.id,status,reward,room.minutes,current.streak,date);
+      await run('INSERT INTO results(room,player,status,reward,minutes,old_streak,date) VALUES(?,?,?,?,?,?,?) ON CONFLICT(room,player) DO NOTHING',room.id,p.id,status,reward,room.minutes,current.streak,date);
       if (status==='success' && current.completed===0) {
-        const referral = query('SELECT inviter FROM referrals WHERE invitee=? AND rewarded_room IS NULL',p.id);
+        const referral = await query('SELECT inviter FROM referrals WHERE invitee=? AND rewarded_room IS NULL',p.id);
         if (referral) {
-          run('UPDATE referrals SET rewarded_room=? WHERE invitee=?',room.id,p.id);
-          run('UPDATE players SET points=points+? WHERE id IN (?,?)',referralPoints,p.id,referral.inviter);
+          await run('UPDATE referrals SET rewarded_room=? WHERE invitee=?',room.id,p.id);
+          await run('UPDATE players SET points=points+? WHERE id IN (?,?)',referralPoints,p.id,referral.inviter);
           rewarded.add(referral.inviter);
         }
       }
@@ -201,11 +199,11 @@ function finish(room, leaving) {
   room.phase = 'outcome';
   room.finished = now;
   if (!leaving) room.breakUntil = now+breakMinutes[room.minutes]*minute;
-  for (const player of new Set([...room.members.map(p=>p.id),...rewarded])) io.to('player:'+player).emit('profile',profile(player));
-  send(room);
+  for (const player of new Set([...room.members.map(p=>p.id),...rewarded])) io.to('player:'+player).emit('profile',await profile(player));
+  await send(room);
 }
 
-function tick(room, now) {
+async function tick(room, now) {
   if (room.phase !== 'active') return;
   const failed = room.members.map(p => [p, Math.min(p.exitAt || Infinity,p.checkUntil || Infinity)])
     .filter(([,deadline]) => deadline <= now && deadline < room.endAt).sort((a,b) => a[1]-b[1])[0];
@@ -220,20 +218,23 @@ function tick(room, now) {
     }
     p.idle = now-p.activity > minute;
   }
-  send(room);
+  await send(room);
 }
 
-setInterval(() => {
+let ticking=false;
+setInterval(async() => {
+  if(ticking)return; ticking=true;
   const now = clock.now();
-  for (const [id,room] of rooms) {
+  try { for (const [id,room] of rooms) {
     if ((room.finished && now-room.finished > 86400000) || (room.phase === 'lobby' && now-room.created > 86400000)) {
       rooms.delete(id);
       for (const p of room.members) if (memberships.get(p.id) === id) memberships.delete(p.id);
-    } else tick(room, now);
-  }
+      await run('DELETE FROM live_rooms WHERE id=?',id);
+    } else await tick(room, now);
+  }} finally {ticking=false;}
 }, 1000).unref();
 
-function leaveWaitingRoom(room, id) {
+async function leaveWaitingRoom(room, id) {
   const playerRoom = 'player:'+id;
   if (room?.phase !== 'lobby') return;
   if (room.members[0].id === id) {
@@ -243,6 +244,7 @@ function leaveWaitingRoom(room, id) {
     }
     io.in(room.id).socketsLeave(room.id);
     rooms.delete(room.id);
+    await run('DELETE FROM live_rooms WHERE id=?',room.id);
     return;
   }
   room.members = room.members.filter(p => p.id !== id);
@@ -250,105 +252,109 @@ function leaveWaitingRoom(room, id) {
   memberships.delete(id);
   io.in(playerRoom).socketsLeave(room.id);
   io.to(playerRoom).emit('room',null);
-  if (!room.members.length) rooms.delete(room.id); else send(room);
+  if (!room.members.length){rooms.delete(room.id);await run('DELETE FROM live_rooms WHERE id=?',room.id);}else await send(room);
 }
 
-io.use((socket,next) => {
+for(const row of await db.all('SELECT state FROM live_rooms')){
+  try{const room=JSON.parse(row.state);if(room?.id&&room?.members){for(const member of room.members){member.exitAt=null;member.checkUntil=null;member.activity=clock.now();memberships.set(member.id,room.id);}rooms.set(room.id,room);}}catch{/* Ignore corrupt room snapshots. */}
+}
+
+io.use(async(socket,next) => {
   try {
     const user = authenticate(socket.handshake.auth);
-    if (isBanned(user.id)) fail(bannedMessage);
+    if (await isBanned(user.id)) fail(bannedMessage);
     socket.data.user = user;
     next();
   } catch (error) { next(error); }
 });
-io.on('connection', (socket) => {
+io.on('connection', async(socket) => {
   const user = socket.data.user;
   const { id } = user;
-  run('INSERT OR IGNORE INTO players(id) VALUES(?)', id);
-  if (telegramIdPattern.test(id)) run(`INSERT INTO telegram_students(id,name,handle) VALUES(?,?,?)
+  await run('INSERT INTO players(id) VALUES(?) ON CONFLICT(id) DO NOTHING', id);
+  if (telegramIdPattern.test(id)) await run(`INSERT INTO telegram_students(id,name,handle) VALUES(?,?,?)
     ON CONFLICT(id) DO UPDATE SET name=excluded.name,handle=excluded.handle`,id,user.name,user.handle || null);
-  if (telegramIdPattern.test(id)) referralCode(id);
+  if (telegramIdPattern.test(id)) await referralCode(id);
   const playerRoom = 'player:'+id;
   socket.join(playerRoom);
   const current = () => rooms.get(memberships.get(id));
   const previous = current();
   if (previous) {
     socket.join(previous.id);
-    tick(previous,clock.now());
-    send(previous);
+    await tick(previous,clock.now());
+    await send(previous);
   }
-  const syncProfile = () => io.to(playerRoom).emit('profile',profile(id));
-  const isPaid = (player) => membership.planStatus(player).tier !== 'free';
-  socket.emit('hello', { user, profile: profile(id), bot: BOT_USERNAME, shortName: APP_SHORT_NAME });
+  const syncProfile=async()=>io.to(playerRoom).emit('profile',await profile(id));
+  const isPaid=async player=>(await membership.planStatus(player)).tier!=='free';
+  socket.emit('hello',{user,profile:await profile(id),bot:BOT_USERNAME,shortName:APP_SHORT_NAME});
 
   function action(event, fn) {
-    socket.on(event, (payload, ack) => {
+    socket.on(event, async(payload, ack) => {
       if (typeof ack !== 'function') return;
-      try { fn(payload ?? {}); ack({ ok:true }); } catch (error) { ack({ error:error.message }); }
+      try { const result=await fn(payload??{}); ack(result&&typeof result==='object'?{ok:true,...result}:{ok:true}); } catch (error) { console.error(event,error);ack({ error:error.message }); }
     });
   }
   function adminAction(event, fn) {
-    socket.on(event,(payload,ack) => {
+    socket.on(event,async(payload,ack) => {
       if (typeof ack!=='function') return;
       if (!admins.has(id)) return ack({error:'هذه الصفحة للمشرفين.'});
-      try { ack(fn(payload || {})); } catch (error) { ack({error:error.message}); }
+      try { ack(await fn(payload||{})); } catch (error) { console.error(event,error);ack({error:error.message}); }
     });
   }
-  function adminStudent(row) {
-    return {...row,points:query('SELECT points FROM players WHERE id=?',row.id)?.points || 0,plan:membership.planStatus(row.id),banned:isBanned(row.id),admin:admins.has(row.id)};
+  async function adminStudent(row) {
+    return {...row,points:Number((await query('SELECT points FROM players WHERE id=?',row.id))?.points||0),plan:await membership.planStatus(row.id),banned:await isBanned(row.id),admin:admins.has(row.id)};
   }
-  adminAction('adminList', ({search}) => {
+  adminAction('adminList', async({search}) => {
     const phrase = typeof search==='string' ? search.trim().replace(/^@/,'').toLowerCase().slice(0,80) : '';
-    const rows = studentRows.all(phrase,phrase,phrase,phrase);
+    const rows = await findStudents(phrase);
     if (telegramIdPattern.test(phrase) && !rows.some(row=>row.id===phrase)) rows.unshift({id:phrase,name:'حساب جديد'});
-    return {students:rows.map(adminStudent),codes:membership.codes()};
+    return {students:await Promise.all(rows.map(adminStudent)),codes:await membership.codes()};
   });
-  adminAction('adminGrant', ({student,plan}) => {
+  adminAction('adminGrant', async({student,plan}) => {
     if (typeof student!=='string' || !telegramIdPattern.test(student) || !Object.hasOwn(plans,plan)) fail('اختر حسابًا وباقة صالحة.');
-    if (isBanned(student)) fail('ارفع الحظر قبل تفعيل العضوية.');
-    if (membership.planStatus(student).tier==='special') fail('سبيشل مفعّلة لهذا الحساب مدى الحياة.');
-    membership.grant(student,plan);
-    updatePlayer(student);
+    if (await isBanned(student)) fail('ارفع الحظر قبل تفعيل العضوية.');
+    if ((await membership.planStatus(student)).tier==='special') fail('سبيشل مفعّلة لهذا الحساب مدى الحياة.');
+    await membership.grant(student,plan);
+    await updatePlayer(student);
     return {ok:true};
   });
-  adminAction('adminRevoke', ({student}) => {
+  adminAction('adminRevoke', async({student}) => {
     if (typeof student!=='string' || !telegramIdPattern.test(student)) fail('اختر حسابًا صالحًا.');
-    membership.revoke(student);
-    updatePlayer(student);
+    await membership.revoke(student);
+    await updatePlayer(student);
     return {ok:true};
   });
-  adminAction('adminPoints', ({student,points}) => {
+  adminAction('adminPoints', async({student,points}) => {
     if (typeof student!=='string' || !telegramIdPattern.test(student) || !Number.isSafeInteger(points) || points<=0) {
       fail('اكتب عدد نقاط صحيحًا أكبر من صفر.');
     }
-    const balance = query('SELECT points FROM players WHERE id=?',student)?.points || 0;
+    const balance = Number((await query('SELECT points FROM players WHERE id=?',student))?.points||0);
     if (!Number.isSafeInteger(balance+points)) fail('الرصيد بعد الإضافة يتجاوز الحد المسموح.');
-    run(`INSERT INTO players(id,points) VALUES(?,?)
+    await run(`INSERT INTO players(id,points) VALUES(?,?)
       ON CONFLICT(id) DO UPDATE SET points=points+excluded.points`,student,points);
-    updatePlayer(student);
+    await updatePlayer(student);
     return {ok:true};
   });
-  adminAction('adminBan', ({student,banned}) => {
+  adminAction('adminBan', async({student,banned}) => {
     if (typeof student!=='string' || !telegramIdPattern.test(student) || typeof banned!=='boolean') fail('اختر حسابًا صالحًا.');
     if (admins.has(student)) fail('لا يمكن حظر حساب أحد المشرفين.');
     if (banned) {
-      run('INSERT OR IGNORE INTO banned_students(id,banned_by,banned_at) VALUES(?,?,?)',student,id,clock.now());
+      await run('INSERT INTO banned_students(id,banned_by,banned_at) VALUES(?,?,?) ON CONFLICT(id) DO NOTHING',student,id,clock.now());
       io.to('player:'+student).emit('banned',bannedMessage);
       io.in('player:'+student).disconnectSockets(true);
-      leaveWaitingRoom(rooms.get(memberships.get(student)),student);
-    } else run('DELETE FROM banned_students WHERE id=?',student);
+      await leaveWaitingRoom(rooms.get(memberships.get(student)),student);
+    } else await run('DELETE FROM banned_students WHERE id=?',student);
     return {ok:true};
   });
-  adminAction('adminCode', ({plan}) => {
+  adminAction('adminCode', async({plan}) => {
     if (!Object.hasOwn(plans,plan)) fail('اختر باقة صالحة.');
-    return {code:membership.createCode(id,plan)};
+    return {code:await membership.createCode(id,plan)};
   });
-  action('redeemCode', ({code}) => {
+  action('redeemCode', async({code}) => {
     if (!telegramIdPattern.test(id)) fail('افتح التطبيق من تليجرام لتفعيل الكود.');
     const normalized = typeof code==='string' ? code.trim().toUpperCase() : '';
     if (!/^MTHQ-[A-F0-9]{16}$/.test(normalized)) fail('الكود غير صالح.');
-    if (!membership.redeemCode(id,normalized,transaction)) fail('الكود مستخدم أو حسابك مفعّل بسبيشل.');
-    updatePlayer(id);
+    if (!await membership.redeemCode(id,normalized)) fail('الكود مستخدم أو حسابك مفعّل بسبيشل.');
+    await updatePlayer(id);
   });
   let nextInviteAt = 0;
   socket.on('prepareInvite', async (_payload, ack) => {
@@ -386,47 +392,47 @@ io.on('connection', (socket) => {
       ack({ error:'تعذّر تجهيز رسالة الدعوة من تليجرام. جرّب بعد قليل.' });
     }
   });
-  action('claimReferral', ({code}) => {
+  action('claimReferral', async({code}) => {
     const normalized = typeof code==='string' ? code.trim().toUpperCase() : '';
     if (!/^REF-[A-F0-9]{10}$/.test(normalized)) fail('اكتب كود الدعوة الذي يبدأ بـ REF-.');
-    const inviter = query('SELECT player FROM referral_codes WHERE code=?',normalized)?.player;
-    if (!inviter || isBanned(inviter)) fail('كود الدعوة غير متاح.');
+    const inviter = (await query('SELECT player FROM referral_codes WHERE code=?',normalized))?.player;
+    if (!inviter || await isBanned(inviter)) fail('كود الدعوة غير متاح.');
     if (id===inviter) fail('استخدم كود صديقك.');
-    const linked = query('SELECT inviter FROM referrals WHERE invitee=?',id);
+    const linked = await query('SELECT inviter FROM referrals WHERE invitee=?',id);
     if (linked?.inviter===inviter) return syncProfile();
     if (linked) fail('هذا الحساب مرتبط بدعوة سابقة.');
-    if (!canRefer(id,inviter)) fail('أدخل كود الدعوة قبل إكمال جلستك الأولى.');
-    run('INSERT INTO referrals(invitee,inviter) VALUES(?,?)',id,inviter);
-    syncProfile();
-    io.to('player:'+inviter).emit('profile',profile(inviter));
+    if (!await canRefer(id,inviter)) fail('أدخل كود الدعوة قبل إكمال جلستك الأولى.');
+    await run('INSERT INTO referrals(invitee,inviter) VALUES(?,?)',id,inviter);
+    await syncProfile();
+    io.to('player:'+inviter).emit('profile',await profile(inviter));
   });
-  action('refreshProfile', () => {
-    syncProfile();
-    if (current()) send(current());
+  action('refreshProfile', async() => {
+    await syncProfile();
+    if (current()) await send(current());
   });
-  action('appearance', ({mode,palette,transparency}) => {
+  action('appearance', async({mode,palette,transparency}) => {
     if (!['dark','light'].includes(mode) || !Object.hasOwn(palettes,palette)) fail('المظهر غير متاح.');
-    if (palettes[palette].premium && !isPaid(id)) fail('هذا اللون متاح مع برو وسبيشل.');
+    if (palettes[palette].premium && !await isPaid(id)) fail('هذا اللون متاح مع برو وسبيشل.');
     if (transparency !== undefined) {
-      if (!isPaid(id)) fail('التحكم بالشفافية متاح مع برو وسبيشل.');
+      if (!await isPaid(id)) fail('التحكم بالشفافية متاح مع برو وسبيشل.');
       if (!Number.isInteger(transparency) || transparency < glassRange.min || transparency > glassRange.max) {
         fail('درجة الشفافية غير متاحة.');
       }
     }
-    if (palette==='custom' && !membership.customPalette(id)) fail('احفظ ألوانك المخصصة أولًا.');
-    membership.setAppearance(id,mode,palette,transparency);
-    syncProfile();
+    if (palette==='custom' && !await membership.customPalette(id)) fail('احفظ ألوانك المخصصة أولًا.');
+    await membership.setAppearance(id,mode,palette,transparency);
+    await syncProfile();
   });
 
-  action('customPalette', ({fill,first,second}) => {
-    if (!isPaid(id)) fail('الألوان المخصصة متاحة مع برو وسبيشل.');
+  action('customPalette', async({fill,first,second}) => {
+    if (!await isPaid(id)) fail('الألوان المخصصة متاحة مع برو وسبيشل.');
     const isHex = value=>typeof value==='string' && /^#[0-9a-f]{6}$/i.test(value);
     if (!['solid','gradient'].includes(fill) || !isHex(first) || !isHex(second)) fail('اختر ألوانًا صالحة.');
-    transaction(() => {
-      membership.setCustomPalette(id,{fill,first,second});
-      membership.setAppearance(id,membership.appearance(id).mode,'custom');
+    await transaction(async() => {
+      await membership.setCustomPalette(id,{fill,first,second});
+      await membership.setAppearance(id,(await membership.appearance(id)).mode,'custom');
     });
-    syncProfile();
+    await syncProfile();
   });
   let nextInvoiceAt = 0;
   socket.on('membershipInvoice', async (payload, ack) => {
@@ -435,14 +441,14 @@ io.on('connection', (socket) => {
     if (!billingEnabled || !Object.hasOwn(plans,plan) || !paidPrices[plan] || id.startsWith('guest:')) {
       return ack({error:'شراء هذه العضوية غير متاح الآن.'});
     }
-    if (membership.planStatus(id).tier === 'special') return ack({error:'عضوية سبيشل مفعّلة مدى الحياة.'});
+    if ((await membership.planStatus(id)).tier === 'special') return ack({error:'عضوية سبيشل مفعّلة مدى الحياة.'});
     if (clock.now() < nextInvoiceAt) return ack({error:'انتظر قليلًا ثم حاول مجددًا.'});
     nextInvoiceAt = clock.now()+10000;
     const title = 'ميثاق التركيز · '+plans[plan].title;
     try {
       const url = await bot.telegram.callApi('createInvoiceLink',{
         title, description:'تفعيل مزايا العضوية لمدة '+plans[plan].duration+'.',
-        payload:membership.newInvoice(id,plan), currency:'XTR', provider_token:'',
+        payload:await membership.newInvoice(id,plan), currency:'XTR', provider_token:'',
         prices:[{label:title,amount:paidPrices[plan]}]
       },{signal:AbortSignal.timeout(8000)});
       nextInvoiceAt = 0;
@@ -451,41 +457,41 @@ io.on('connection', (socket) => {
       ack({error:'تعذّر فتح فاتورة نجوم تليجرام.'});
     }
   });
-  function enter(room, goal) {
+  async function enter(room, goal) {
     const old = current();
     if (old && old.phase !== 'outcome') fail('أكمل غرفتك الحالية أولًا.');
     if (old) io.in(playerRoom).socketsLeave(old.id);
     room.members.push({ id, name:user.name, photo:user.photo, goal, ready:false, activity:clock.now() });
     memberships.set(id,room.id);
     io.in(playerRoom).socketsJoin(room.id);
-    send(room);
+    await send(room);
   }
   const goalText = (value) => {
     const goal = String(value || '').trim().slice(0,160);
     if (!goal) fail('اكتب هدفك أولًا.');
     return goal;
   };
-  action('create', ({ minutes, goal, pact }) => {
+  action('create', async({ minutes, goal, pact }) => {
     if (!durations.includes(minutes)) fail('اختر مدة صالحة.');
-    if (minutes >= 120 && !isPaid(id)) fail('جلسات ١٢٠ و١٨٠ دقيقة للمشتركين فقط.');
+    if (minutes >= 120 && !await isPaid(id)) fail('جلسات ١٢٠ و١٨٠ دقيقة للمشتركين فقط.');
     let roomId;
     do { roomId = randomUUID().replaceAll('-',''); }
     while ([...rooms.values()].some(room=>room.code===roomId.slice(0,10).toUpperCase()));
     const room = { id:roomId, code:roomId.slice(0,10).toUpperCase(), phase:'lobby', created:clock.now(),
       minutes, pact:String(pact || '').trim().slice(0,160), members:[] };
-    enter(room,goalText(goal));
     rooms.set(room.id,room);
+    await enter(room,goalText(goal));
   });
-  action('join', ({ code, goal }) => {
+  action('join', async({ code, goal }) => {
     const normalized = typeof code==='string' ? code.trim().toUpperCase() : '';
     const room = rooms.get(normalized.toLowerCase()) || (/^[A-F0-9]{10}$/.test(normalized)
       ? [...rooms.values()].find(room=>room.code===normalized) : null);
     if (!room || room.phase !== 'lobby' || room.members.length >= 2) fail('الغرفة ممتلئة أو انتهت صلاحية الدعوة.');
     const inviter = room.members[0].id;
-    enter(room,goalText(goal));
-    if (canRefer(id,inviter)) {
-      const attached = run('INSERT OR IGNORE INTO referrals(invitee,inviter) VALUES(?,?)',id,inviter);
-      if (attached.changes) { syncProfile(); io.to('player:'+inviter).emit('profile',profile(inviter)); }
+    await enter(room,goalText(goal));
+    if (await canRefer(id,inviter)) {
+      const attached = await run('INSERT INTO referrals(invitee,inviter) VALUES(?,?) ON CONFLICT(invitee) DO NOTHING',id,inviter);
+      if (attached.changes) { await syncProfile(); io.to('player:'+inviter).emit('profile',await profile(inviter)); }
     }
   });
   let nextDirectInvite = 0;
@@ -504,7 +510,7 @@ io.on('connection', (socket) => {
     io.to('player:'+recipient.data.user.id).emit('directInvite',{code:room.id, name:user.name, minutes:room.minutes});
   });
   action('leaveLobby', () => leaveWaitingRoom(current(),id));
-  action('ready', () => {
+  action('ready', async() => {
     const room = current();
     if (room?.phase !== 'lobby') return;
     const p = room.members.find(p => p.id === id);
@@ -512,7 +518,7 @@ io.on('connection', (socket) => {
     if (starting && room.members.some(member => !io.sockets.adapter.rooms.get('player:'+member.id)?.size)) {
       fail('بانتظار عودة شريكك للاتصال.');
     }
-    if (starting && room.minutes >= 120 && !isPaid(room.members[0].id)) fail('تحتاج إلى عضوية فعّالة لبدء هذه الجلسة.');
+    if (starting && room.minutes >= 120 && !await isPaid(room.members[0].id)) fail('تحتاج إلى عضوية فعّالة لبدء هذه الجلسة.');
     p.ready = true;
     if (starting) {
       room.phase = 'active';
@@ -520,70 +526,70 @@ io.on('connection', (socket) => {
       room.endAt = room.startsAt+room.minutes*minute;
       for (const m of room.members) m.nextCheck = room.startsAt + (2+Math.random()*(room.minutes-4))*minute;
     }
-    send(room);
+    await send(room);
   });
-  function active() {
+  async function active() {
     const room = current();
-    if (room) tick(room,clock.now());
+    if (room) await tick(room,clock.now());
     if (room?.phase !== 'active') fail('الجلسة غير نشطة.');
     return [room,room.members.find(p => p.id === id),room.members.find(p => p.id !== id)];
   }
-  function presence(hidden) {
+  async function presence(hidden) {
     const room = current();
     if (room?.phase !== 'active') return;
-    tick(room,clock.now());
+    await tick(room,clock.now());
     if (room.phase !== 'active') return;
     const p = room.members.find(p => p.id === id);
     if (hidden) p.exitAt ||= clock.now()+10000;
     else { p.exitAt = null; p.activity = clock.now(); }
-    send(room);
+    await send(room);
   }
   action('presence', ({hidden}) => presence(hidden === true));
   socket.on('disconnect', () => { if (!io.sockets.adapter.rooms.get(playerRoom)?.size) presence(true); });
-  action('activity', () => { const room = current(); if (room?.phase === 'active') room.members.find(p=>p.id===id).activity=clock.now(); });
-  action('check', () => { const [room,p] = active(); p.checkUntil = null; p.activity = clock.now(); send(room); });
-  action('withdraw', () => { const [room] = active(); finish(room,id); });
-  action('signal', ({item}) => {
+  action('activity', async() => { const room = current(); if (room?.phase === 'active'){room.members.find(p=>p.id===id).activity=clock.now();await saveRoom(room);} });
+  action('check', async() => { const [room,p] = await active(); p.checkUntil = null; p.activity = clock.now(); await send(room); });
+  action('withdraw', async() => { const [room] = await active(); await finish(room,id); });
+  action('signal', async({item}) => {
     const room = current();
-    if (item === 'horn' && (room?.phase !== 'outcome' || !profile(id).history.some(r=>r.room===room.id && r.status==='success'))) fail('بوق الفوز متاح بعد إتمام الجلسة.');
-    const [,p,partner] = item === 'horn' ? [room, room.members.find(m=>m.id===id),room.members.find(m=>m.id!==id)] : active();
+    if (item === 'horn' && (room?.phase !== 'outcome' || !(await profile(id)).history.some(r=>r.room===room.id && r.status==='success'))) fail('بوق الفوز متاح بعد إتمام الجلسة.');
+    const [,p,partner] = item === 'horn' ? [room, room.members.find(m=>m.id===id),room.members.find(m=>m.id!==id)] : await active();
     if (clock.now()-(p.lastSignal || 0)<10000) fail('انتظر قليلًا قبل إرسال تنبيه آخر.');
     if (item === 'nudge' && !partner.idle) fail('شريكك يركز الآن.');
-    if (['zap','coffee','horn'].includes(item)) use(id,item);
+    if (['zap','coffee','horn'].includes(item)) await use(id,item);
     else if (item !== 'nudge') fail('تفاعل غير صالح.');
     p.lastSignal=clock.now();
     io.to('player:'+partner.id).emit('signal',item);
-    syncProfile();
+    await saveRoom(room);await syncProfile();
   });
-  action('requestPause', () => {
-    const [room] = active();
-    if (clock.now() < room.startsAt || ((!isPaid(id) || room.premiumPauseUsed) && !profile(id).inventory.pause) || room.pauseUntil > clock.now() || room.pauseRequest?.until > clock.now()) fail('الاستراحة غير متاحة الآن.');
+  action('requestPause', async() => {
+    const [room] = await active();
+    if (clock.now() < room.startsAt || ((!await isPaid(id) || room.premiumPauseUsed) && !(await profile(id)).inventory.pause) || room.pauseUntil > clock.now() || room.pauseRequest?.until > clock.now()) fail('الاستراحة غير متاحة الآن.');
     room.pauseRequest = { id, until:clock.now()+30000 };
-    send(room);
+    await send(room);
   });
-  action('answerPause', ({accept}) => {
-    const [room] = active();
+  action('answerPause', async({accept}) => {
+    const [room] = await active();
     const request = room.pauseRequest;
     if (!request || request.id === id || request.until < clock.now()) fail('انتهت صلاحية طلب الاستراحة.');
     if (accept === true) {
-      if (isPaid(request.id) && !room.premiumPauseUsed) room.premiumPauseUsed = true;
-      else use(request.id,'pause');
+      if (await isPaid(request.id) && !room.premiumPauseUsed) room.premiumPauseUsed = true;
+      else await use(request.id,'pause');
       room.pauseUntil = clock.now()+3*minute;
       room.endAt += 3*minute;
       for (const p of room.members) {
         if (p.nextCheck) p.nextCheck += 3*minute;
         if (p.checkUntil) p.checkUntil += 3*minute;
       }
-      io.to('player:'+request.id).emit('profile',profile(request.id));
+      io.to('player:'+request.id).emit('profile',await profile(request.id));
     }
     room.pauseRequest = null;
-    send(room);
+    await send(room);
   });
-  action('buy', ({item,quantity=1}) => {
+  action('buy', async({item,quantity=1}) => {
     if (!Object.hasOwn(items,item) || item==='marathon') fail('العنصر غير موجود.');
     const [category,,cost] = items[item];
-    const { points,inventory,cosmetics } = profile(id);
-    if ([1,2,4].includes(category) && isPaid(id)) fail('العنصر متاح لك ضمن العضوية.');
+    const { points,inventory,cosmetics } = await profile(id);
+    if ([1,2,4].includes(category) && await isPaid(id)) fail('العنصر متاح لك ضمن العضوية.');
     const total = cost*quantity;
     const stackable = category===0 || category===3;
     if (!Number.isSafeInteger(quantity) || quantity<1 || (!stackable && quantity!==1) || !Number.isSafeInteger(total)) fail('الكمية غير صالحة.');
@@ -592,49 +598,49 @@ io.on('connection', (socket) => {
     const nextCount = category===2 ? 1 : (inventory[item] || 0)+quantity;
     if (!Number.isSafeInteger(nextCount)) fail('الكمية غير صالحة.');
     inventory[item] = nextCount;
-    transaction(() => {
-      if (category === 2) membership.grantCosmetic(id,item);
-      run('UPDATE players SET points=points-?,inventory=? WHERE id=?',total,JSON.stringify(inventory),id);
+    await transaction(async() => {
+      if (category === 2) await membership.grantCosmetic(id,item);
+      await run('UPDATE players SET points=points-?,inventory=? WHERE id=?',total,JSON.stringify(inventory),id);
     });
-    syncProfile();
+    await syncProfile();
   });
-  action('equip', ({item}) => {
+  action('equip', async({item}) => {
     if (!Object.hasOwn(items,item) || ![1,2,4].includes(items[item][0])) fail('العنصر غير متاح.');
-    const { inventory,cosmetics } = profile(id);
+    const { inventory,cosmetics } = await profile(id);
     const category = items[item][0];
-    if (!isPaid(id) && !(category === 2 ? cosmetics[item] : inventory[item])) fail('العنصر غير متاح.');
-    const equipped = JSON.parse(query('SELECT equipped FROM players WHERE id=?',id).equipped);
+    if (!await isPaid(id) && !(category === 2 ? cosmetics[item] : inventory[item])) fail('العنصر غير متاح.');
+    const equipped = JSON.parse((await query('SELECT equipped FROM players WHERE id=?',id)).equipped);
     const slot = category === 4 ? 'decoration' : category === 1 ? 'theme' : item === 'frame' ? 'frame' : 'title';
     if (equipped[slot]===item) equipped[slot]=null;
     else {
       if (category===2) delete equipped[slot==='title'?'frame':'title'];
       equipped[slot]=item;
     }
-    run('UPDATE players SET equipped=? WHERE id=?',JSON.stringify(equipped),id);
-    syncProfile();
-    if (current()) send(current());
+    await run('UPDATE players SET equipped=? WHERE id=?',JSON.stringify(equipped),id);
+    await syncProfile();
+    if (current()) await send(current());
   });
-  action('result', ({done}) => {
+  action('result', async({done}) => {
     const room = current();
     if (room?.phase !== 'outcome' || typeof done !== 'boolean') return;
-    run("UPDATE results SET goal_done=? WHERE room=? AND player=? AND status='success'",Number(done),room.id,id);
-    syncProfile();
+    await run("UPDATE results SET goal_done=? WHERE room=? AND player=? AND status='success'",Number(done),room.id,id);
+    await syncProfile();
   });
-  action('protect', ({item}) => {
+  action('protect', async({item}) => {
     if (!['shield','eraser'].includes(item)) fail('عنصر غير صالح.');
-    const last = profile(id).history[0];
+    const last = (await profile(id)).history[0];
     if (last?.status !== 'left' || (item === 'eraser' && last.forgiven)) fail('لا يوجد انسحاب حديث لمعالجته.');
-    transaction(() => {
-      if (item === 'shield' && (!last.old_streak || profile(id).streak)) fail('لا توجد سلسلة لاستعادتها.');
-      use(id,item);
-      if (item === 'shield') run('UPDATE players SET streak=? WHERE id=?',last.old_streak,id);
-      else run('UPDATE results SET forgiven=1 WHERE room=? AND player=?',last.room,id);
+    await transaction(async() => {
+      if (item === 'shield' && (!last.old_streak || (await profile(id)).streak)) fail('لا توجد سلسلة لاستعادتها.');
+      await use(id,item);
+      if (item === 'shield') await run('UPDATE players SET streak=? WHERE id=?',last.old_streak,id);
+      else await run('UPDATE results SET forgiven=1 WHERE room=? AND player=?',last.room,id);
     });
-    syncProfile();
+    await syncProfile();
   });
 });
 
-app.get('/health', (_req,res) => res.json({ ok:true, guests:dev }));
+app.get('/health',async(_req,res)=>{try{await query('SELECT 1 AS ok');res.json({ok:true,database:db.kind,guests:dev});}catch{res.status(503).json({ok:false,database:db.kind});}});
 app.use('/icons',express.static('node_modules/lucide-static/icons'));
 app.use('/fonts',express.static('node_modules/@fontsource/ibm-plex-sans-arabic/files'));
 app.use(express.static('public'));
@@ -648,24 +654,25 @@ if (bot && (billingEnabled || (PUBLIC_URL && process.env.RUN_BOT === '1'))) {
     bot.command('paysupport', ctx => ctx.reply(process.env.PAYMENT_SUPPORT || 'للمساعدة بخصوص عضويتك، تواصل مع مشرف ميثاق التركيز وأرسل معرّف عملية الشراء الظاهر في تليجرام.'));
     bot.on('pre_checkout_query', async ctx => {
       const checkout = ctx.update.pre_checkout_query;
-      const valid = !isBanned(String(checkout.from.id)) && membership.validateCheckout(checkout.invoice_payload,{
+      const valid = !await isBanned(String(checkout.from.id)) && await membership.validateCheckout(checkout.invoice_payload,{
         user:checkout.from.id, amount:checkout.total_amount, currency:checkout.currency
       });
       await ctx.telegram.answerPreCheckoutQuery(checkout.id,valid,valid ? undefined : 'هذه الفاتورة غير متاحة. افتح التطبيق وابدأ من جديد.');
     });
-    bot.on('successful_payment', ctx => {
+    bot.on('successful_payment', async ctx => {
       const payment = ctx.message.successful_payment;
-      const player = membership.fulfill(payment.invoice_payload,{
+      const player = await membership.fulfill(payment.invoice_payload,{
         user:ctx.from.id, amount:payment.total_amount, currency:payment.currency,
         charge:payment.telegram_payment_charge_id
-      },transaction);
-      if (player) updatePlayer(player);
+      });
+      if (player) await updatePlayer(player);
     });
   }
   bot.catch(error => { console.error('تعذّر معالجة تحديث تليجرام.',error.name); throw error; });
   bot.launch({allowedUpdates:billingEnabled ? ['message','pre_checkout_query'] : ['message']}).catch(() => console.error('تعذّر تشغيل بوت تليجرام. تحقّق من الاتصال وإعدادات البوت.'));
-  for (const signal of ['SIGINT','SIGTERM']) process.once(signal,() => {
+  for (const signal of ['SIGINT','SIGTERM']) process.once(signal,async() => {
     try { bot.stop(signal); } catch { /* Polling has not started. */ }
     http.close();
+    await db.close();
   });
 }
