@@ -50,6 +50,7 @@ const isPaid = () => ['pro','special'].includes(profile?.plan?.tier);
 let purchaseBusy = false;
 let activityDay;
 let adminData, adminSearch = '', adminBusy = false, blocked = false;
+let appearanceRequest = 0;
 const guestId = sessionStorage.getItem('methaq-guest') || Array.from(crypto.getRandomValues(new Uint8Array(18)), b=>b.toString(16).padStart(2,'0')).join('');
 sessionStorage.setItem('methaq-guest',guestId);
 const name = new URLSearchParams(location.search).get('name') || 'ضيف ميثاق';
@@ -374,11 +375,14 @@ function adminPage() {
         const plan = plans[student.plan.tier];
         const status = student.banned ? 'محظور' : plan?.title || 'مجاني';
         return `<article class="admin-row"><div><strong>${esc(student.name)}</strong>
-        <p class="bodycopy">${esc(student.handle?'@'+student.handle+' · ':'')}${esc(student.id)} · ${status} · ${num(student.points)} نقطة</p></div>
+        <p class="bodycopy">${esc(student.handle?'@'+student.handle+' · ':'')}${esc(student.id)} · ${status} · ${num(student.points)} نقطة</p>
+        ${student.temporaryPoints?`<p class="bodycopy">${icon('clock-3')} ${num(student.temporaryPoints)} نقطة مؤقتة · أقرب انتهاء ${new Date(student.temporaryUntil).toLocaleDateString('ar-SA')}</p>`:''}</div>
         <form class="actions admin-student-form" data-student="${esc(student.id)}">
           ${!student.banned && student.plan.tier!=='special'?`<select name="plan" aria-label="الباقة"><option value="pro">برو</option><option value="special">سبيشل</option></select><button class="secondary" value="grant">${icon('circle-check')} فعّل</button>`:''}
           ${plan?button('confirmAdminRevoke','إزالة العضوية','danger','user-round-minus',student.id):''}
-          ${!student.banned?`<input name="points" type="number" min="1" step="1" inputmode="numeric" placeholder="النقاط" aria-label="عدد النقاط"><button class="secondary" value="points">${icon('sparkles')} أضف نقاطًا</button>`:''}
+          ${!student.banned?`<input name="points" type="number" min="1" step="1" inputmode="numeric" placeholder="عدد النقاط" aria-label="عدد النقاط">
+          <select name="validDays" aria-label="صلاحية النقاط"><option value="0">دائمة</option><option value="1">يوم واحد</option><option value="3">٣ أيام</option><option value="7">أسبوع</option><option value="14">أسبوعان</option><option value="30">شهر</option></select>
+          <button class="secondary" value="points">${icon('sparkles')} إضافة</button><button class="danger" value="removePoints">${icon('circle-minus')} إزالة</button>`:''}
           ${!student.admin?`<button class="${student.banned?'secondary':'danger'}" value="${student.banned?'unban':'ban'}">${student.banned?'رفع الحظر':'حظر'}</button>`:''}
         </form></article>`;
       }).join('') || '<p class="bodycopy">'+(adminData?'لم تظهر حسابات مطابقة.':'جارٍ تحميل الحسابات…')+'</p>'}</section>
@@ -387,6 +391,25 @@ function adminPage() {
       <button class="primary">${icon('ticket-plus')} أنشئ كودًا</button></form>
       ${codes.map(entry=>`<div class="admin-row"><div><code dir="ltr">${esc(entry.code)}</code><p class="bodycopy">${plans[entry.plan]?.title} · ${entry.redeemed_by?'مستخدم':'متاح'}</p></div>
       ${!entry.redeemed_by?button('adminCopy','نسخ الكود','secondary','copy',entry.code):''}</div>`).join('')}</section></div></div>`;
+}
+
+function changeAppearance(next) {
+  if(!profile?.appearance)return;
+  const previous={...profile.appearance};
+  const request=++appearanceRequest;
+  profile.appearance={...profile.appearance,...next};
+  applyAppearance();
+  if(appearanceOpen&&dialog.open){
+    dialog.querySelectorAll('[data-action="mode"]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.value===profile.appearance.mode)));
+    dialog.querySelectorAll('[data-action="palette"]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.value===profile.appearance.palette)));
+  }
+  tg?.HapticFeedback?.selectionChanged();
+  socket.timeout(5000).emitWithAck('appearance',{mode:profile.appearance.mode,palette:profile.appearance.palette}).then(response=>{
+    if(response.error)throw new Error(response.error);
+  }).catch(error=>{
+    if(request===appearanceRequest){profile.appearance=previous;applyAppearance();openAppearance();}
+    toast(error.message||'تعذّر حفظ المظهر.');
+  });
 }
 async function adminRequest(event,payload={}) {
   if (!profile?.admin || !socket?.connected || adminBusy) return;
@@ -458,10 +481,18 @@ dialog.addEventListener('input',event=>{
   form.querySelector('#custom-second').hidden = custom.fill!=='gradient';
   form.querySelector('#color-preview').style.background = customFill(custom);
 });
-dialog.addEventListener('submit',event=>{
+dialog.addEventListener('submit',async event=>{
   if (event.target.id!=='custom-palette-form') return;
   event.preventDefault();
-  emit('customPalette',readCustomForm(event.target));
+  const custom=readCustomForm(event.target);
+  const previous={...profile.appearance};
+  profile.appearance={...profile.appearance,palette:'custom',custom};
+  applyAppearance();
+  try{
+    const response=await socket.timeout(5000).emitWithAck('customPalette',custom);
+    if(response.error)throw new Error(response.error);
+    toast('تم حفظ ألوانك.');
+  }catch(error){profile.appearance=previous;applyAppearance();toast(error.message||'تعذّر حفظ الألوان.');}
 });
 
 function openAppearance() {
@@ -759,10 +790,10 @@ document.addEventListener('click',event=>{
     if (!durationAllowed(+value)) return premiumDuration(+value);
     chosen=+value; render(true);
   } else if (action==='appearanceMenu') openAppearance();
-  else if (action==='mode') emit('appearance',{mode:value,palette:profile?.appearance?.palette || 'emerald'});
+  else if (action==='mode') changeAppearance({mode:value});
   else if (action==='palette') {
     if (palettes[value]?.premium && !isPaid()) return toast('هذا اللون متاح مع برو وسبيشل.');
-    emit('appearance',{mode:profile?.appearance?.mode || defaultAppearance.mode,palette:value});
+    changeAppearance({palette:value});
   }
   else if (action==='seePlans') {
     if (room?.phase==='active') return toast('الترقية متاحة بعد انتهاء جلسة التركيز.');
@@ -840,7 +871,8 @@ page.addEventListener('submit',event=>{
     else {
       const student = formElement.dataset.student;
       const operation = event.submitter?.value;
-      if (operation==='points') adminRequest('adminPoints',{student,points:Number(form.get('points'))});
+      if (operation==='points') adminRequest('adminPoints',{student,points:Number(form.get('points')),validDays:Number(form.get('validDays'))});
+      else if(operation==='removePoints') adminRequest('adminRemovePoints',{student,points:Number(form.get('points'))});
       else if (operation==='grant') adminRequest('adminGrant',{student,plan:form.get('plan')});
       else if (operation==='ban' || operation==='unban') adminRequest('adminBan',{student,banned:operation==='ban'});
     }
@@ -894,7 +926,7 @@ function updateProfile(data) {
   const changed = profile?.appearance?.mode !== data.appearance?.mode || profile?.appearance?.palette !== data.appearance?.palette || profile?.plan?.tier !== data.plan?.tier || profile?.adminAccess !== data.adminAccess || JSON.stringify(profile?.appearance?.custom) !== JSON.stringify(data.appearance?.custom);
   profile = data;
   clearTimeout(expiryTimer);
-  const expires = [data.plan?.until,...Object.values(data.cosmetics || {})].filter(value=>value>data.now);
+  const expires = [data.plan?.until,data.pointExpiry,...Object.values(data.cosmetics || {})].filter(value=>value>data.now);
   if (expires.length) expiryTimer = setTimeout(()=>emit('refreshProfile'),Math.min(2147483647,Math.min(...expires)-data.now+250));
   render(true);
   if (changed && appearanceOpen && dialog.open) {

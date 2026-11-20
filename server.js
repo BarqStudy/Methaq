@@ -45,6 +45,11 @@ await db.exec(`
     PRIMARY KEY(room,player));
   CREATE INDEX IF NOT EXISTS results_player_date ON results(player,date);
   CREATE TABLE IF NOT EXISTS live_rooms(id TEXT PRIMARY KEY,state TEXT NOT NULL,updated_at BIGINT NOT NULL);
+  CREATE TABLE IF NOT EXISTS point_grants(
+    id TEXT PRIMARY KEY,player TEXT NOT NULL,amount INTEGER NOT NULL,remaining INTEGER NOT NULL,
+    expires_at BIGINT NOT NULL,created_by TEXT NOT NULL,created_at BIGINT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS point_grants_player_expiry ON point_grants(player,expires_at);
 `);
 const app = express();
 export const http = createServer(app);
@@ -70,6 +75,24 @@ const isBanned=async id=>Boolean(await query('SELECT 1 FROM banned_students WHER
 const findStudents=(phrase)=>db.all(`SELECT id,name,handle FROM telegram_students
   WHERE ?='' OR id=? OR lower(name) LIKE ? OR coalesce(handle,'') LIKE ? ORDER BY name,id LIMIT 30`,phrase,phrase,'%'+phrase+'%','%'+phrase+'%');
 const bannedMessage = 'حُظر هذا الحساب من استخدام ميثاق.';
+async function expirePointGrants(player) {
+  const condition=player?' AND player=?':'';
+  const args=player?[clock.now(),player]:[clock.now()];
+  const expired=await db.all(`SELECT player,sum(remaining) AS amount FROM point_grants WHERE expires_at<=? AND remaining>0${condition} GROUP BY player`,...args);
+  if(!expired.length)return [];
+  await transaction(async()=>{
+    for(const row of expired){const amount=Number(row.amount);await run('UPDATE players SET points=CASE WHEN points>? THEN points-? ELSE 0 END WHERE id=?',amount,amount,row.player);}
+    await run(`DELETE FROM point_grants WHERE expires_at<=?${condition}`,...args);
+  });
+  return expired.map(row=>row.player);
+}
+async function consumeTemporaryPoints(player,amount){
+  let left=amount;
+  const grants=await db.all('SELECT id,remaining FROM point_grants WHERE player=? AND expires_at>? AND remaining>0 ORDER BY expires_at,created_at',player,clock.now());
+  for(const grant of grants){if(!left)break;const used=Math.min(left,Number(grant.remaining));await run('UPDATE point_grants SET remaining=remaining-? WHERE id=?',used,grant.id);left-=used;}
+}
+await expirePointGrants();
+setInterval(async()=>{try{for(const id of await expirePointGrants())await updatePlayer(id);}catch(error){console.error('تعذّر إنهاء النقاط المؤقتة.',error.message);}},60000).unref();
 async function updatePlayer(id) {
   if (!await query('SELECT 1 FROM players WHERE id=?',id)) return;
   io.to('player:'+id).emit('profile',await profile(id));
@@ -108,13 +131,14 @@ async function analytics(id) {
 }
 
 async function profile(id, includeAnalytics=true) {
-  const [player,stats,history,plan,cosmetics,appearance,referral,analysis]=await Promise.all([
+  const [player,stats,history,plan,cosmetics,appearance,referral,analysis,pointExpiry]=await Promise.all([
     query('SELECT * FROM players WHERE id=?',id),
     query(`SELECT count(*) FILTER (WHERE status='success') AS completed,coalesce(sum(minutes) FILTER (WHERE status='success'),0) AS minutes,count(*) FILTER (WHERE status='left' AND forgiven=0) AS left FROM results WHERE player=?`,id),
     db.all('SELECT * FROM results WHERE player=? ORDER BY date DESC LIMIT 20',id),
     membership.planStatus(id),membership.cosmetics(id),membership.appearance(id),
     query('SELECT count(*) AS referrals FROM referrals WHERE rewarded_room IS NOT NULL AND (inviter=? OR invitee=?)',id,id),
-    includeAnalytics?analytics(id):Promise.resolve(null)
+    includeAnalytics?analytics(id):Promise.resolve(null),
+    query('SELECT min(expires_at) AS expiry FROM point_grants WHERE player=? AND expires_at>? AND remaining>0',id,clock.now())
   ]);
   const today = new Date(clock.now()).toISOString().slice(0,10);
   const yesterday = new Date(clock.now()-86400000).toISOString().slice(0,10);
@@ -133,7 +157,7 @@ async function profile(id, includeAnalytics=true) {
   return { ...player, streak, inventory, equipped, plan, cosmetics, appearance, now:clock.now(),
     admin:admins.has(id), adminAccess:adminAccess(id), prices:billingEnabled && !id.startsWith('guest:') ? paidPrices : {},
     referralBonus:Number(referral.referrals)*referralPoints,
-    ...(analysis||{}), completed:Number(stats.completed),minutes:Number(stats.minutes),left:Number(stats.left),
+    ...(analysis||{}), pointExpiry:pointExpiry?.expiry?Number(pointExpiry.expiry):null,completed:Number(stats.completed),minutes:Number(stats.minutes),left:Number(stats.left),
     reliability: Number(stats.completed)+Number(stats.left) ? Math.round(100*Number(stats.completed)/(Number(stats.completed)+Number(stats.left))) : 100, history };
 }
 
@@ -186,6 +210,7 @@ async function finish(room, leaving) {
       const reward = status === 'success' ? successReward : status === 'left' ? -Math.min(rewards.withdrawal,current.points) : rewards.steadfast;
       const today = new Date(now).toISOString().slice(0,10);
       const streak = status === 'success' ? current.streak + Number(current.last_day !== today) : status === 'left' ? 0 : current.streak;
+      if(reward<0)await consumeTemporaryPoints(p.id,-reward);
       await run('UPDATE players SET points=points+?, streak=?, last_day=? WHERE id=?', reward, streak, status === 'success' ? today : current.last_day, p.id);
       const date = new Date(now).toISOString().replace('T',' ').slice(0,19);
       await run('INSERT INTO results(room,player,status,reward,minutes,old_streak,date) VALUES(?,?,?,?,?,?,?) ON CONFLICT(room,player) DO NOTHING',room.id,p.id,status,reward,room.minutes,current.streak,date);
@@ -304,7 +329,9 @@ io.on('connection', async(socket) => {
     });
   }
   async function adminStudent(row) {
-    return {...row,points:Number((await query('SELECT points FROM players WHERE id=?',row.id))?.points||0),plan:await membership.planStatus(row.id),banned:await isBanned(row.id),admin:admins.has(row.id)};
+    await expirePointGrants(row.id);
+    const [balance,temporary]=await Promise.all([query('SELECT points FROM players WHERE id=?',row.id),query('SELECT coalesce(sum(remaining),0) AS points,min(expires_at) AS nearest FROM point_grants WHERE player=? AND expires_at>? AND remaining>0',row.id,clock.now())]);
+    return {...row,points:Number(balance?.points||0),temporaryPoints:Number(temporary.points||0),temporaryUntil:temporary.nearest?Number(temporary.nearest):null,plan:await membership.planStatus(row.id),banned:await isBanned(row.id),admin:admins.has(row.id)};
   }
   adminAction('adminList', async({search}) => {
     const phrase = typeof search==='string' ? search.trim().replace(/^@/,'').toLowerCase().slice(0,80) : '';
@@ -326,16 +353,25 @@ io.on('connection', async(socket) => {
     await updatePlayer(student);
     return {ok:true};
   });
-  adminAction('adminPoints', async({student,points}) => {
-    if (typeof student!=='string' || !telegramIdPattern.test(student) || !Number.isSafeInteger(points) || points<=0) {
+  adminAction('adminPoints', async({student,points,validDays=0}) => {
+    if (typeof student!=='string' || !telegramIdPattern.test(student) || !Number.isSafeInteger(points) || points<=0 || !Number.isSafeInteger(validDays) || validDays<0 || validDays>365) {
       fail('اكتب عدد نقاط صحيحًا أكبر من صفر.');
     }
     const balance = Number((await query('SELECT points FROM players WHERE id=?',student))?.points||0);
     if (!Number.isSafeInteger(balance+points)) fail('الرصيد بعد الإضافة يتجاوز الحد المسموح.');
-    await run(`INSERT INTO players(id,points) VALUES(?,?)
-      ON CONFLICT(id) DO UPDATE SET points=points+excluded.points`,student,points);
+    await transaction(async()=>{
+      await run(`INSERT INTO players(id,points) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET points=players.points+excluded.points`,student,points);
+      if(validDays)await run('INSERT INTO point_grants(id,player,amount,remaining,expires_at,created_by,created_at) VALUES(?,?,?,?,?,?,?)',randomUUID(),student,points,points,clock.now()+validDays*86400000,id,clock.now());
+    });
     await updatePlayer(student);
     return {ok:true};
+  });
+  adminAction('adminRemovePoints',async({student,points})=>{
+    if(typeof student!=='string'||!telegramIdPattern.test(student)||!Number.isSafeInteger(points)||points<=0)fail('اكتب عدد نقاط صحيحًا أكبر من صفر.');
+    const balance=Number((await query('SELECT points FROM players WHERE id=?',student))?.points||0);
+    const removed=Math.min(balance,points);
+    await transaction(async()=>{await consumeTemporaryPoints(student,removed);await run('UPDATE players SET points=points-? WHERE id=?',removed,student);});
+    await updatePlayer(student);return {ok:true,removed};
   });
   adminAction('adminBan', async({student,banned}) => {
     if (typeof student!=='string' || !telegramIdPattern.test(student) || typeof banned!=='boolean') fail('اختر حسابًا صالحًا.');
@@ -604,6 +640,7 @@ io.on('connection', async(socket) => {
     inventory[item] = nextCount;
     await transaction(async() => {
       if (category === 2) await membership.grantCosmetic(id,item);
+      await consumeTemporaryPoints(id,total);
       await run('UPDATE players SET points=points-?,inventory=? WHERE id=?',total,JSON.stringify(inventory),id);
     });
     await syncProfile();

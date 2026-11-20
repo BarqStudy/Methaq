@@ -69,6 +69,12 @@ test('runs Telegram invitations, admin changes, custom appearance, and referral 
   const points = once(recipient,'profile');
   assert.deepEqual(await command(host,'adminPoints',{student:'102',points:50}),{ok:true});
   assert.equal((await points)[0].points,50);
+  const temporary = once(recipient,'profile');
+  assert.deepEqual(await command(host,'adminPoints',{student:'102',points:100,validDays:7}),{ok:true});
+  assert.equal((await temporary)[0].points,150);
+  const removedPoints = once(recipient,'profile');
+  assert.deepEqual(await command(host,'adminRemovePoints',{student:'102',points:100}),{ok:true,removed:100});
+  assert.equal((await removedPoints)[0].points,50);
   const revoked = once(recipient,'profile');
   assert.deepEqual(await command(host,'adminRevoke',{student:'102'}),{ok:true});
   const [free] = await revoked;
