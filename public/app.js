@@ -99,7 +99,7 @@ function account() {
   }
 }
 const button = (action,label,type='secondary',symbol='',value='') => `<button type="button" class="${type}" data-action="${action}" data-value="${value}">${symbol ? icon(symbol):''}${label}</button>`;
-const heading = (title,caption='') => `<div class="heading"><h1>${title}</h1>${caption?'<p>'+caption+'</p>':''}</div>`;
+const heading = (title,caption='') => `<div class="heading">${tab!=='home'?button('backPage','رجوع','page-back','arrow-right'):''}<div class="heading-copy"><h1>${title}</h1>${caption?'<p>'+caption+'</p>':''}</div></div>`;
 const isInvite = () => invite && !inviteDismissed && (!room || revisited);
 const durationAllowed = (minutes) => minutes<120 || isPaid();
 const dialProgress = (minutes) => minutes<=25 ? Math.max(0,minutes) : Math.min(100,25+(minutes-25)*75/155);
@@ -853,6 +853,7 @@ document.addEventListener('click',event=>{
     document.querySelector('#memberships')?.scrollIntoView({block:'start'});
   }
   else if(action==='seeMembership'){tab='plans';render();window.scrollTo({top:0,behavior:'instant'});}
+  else if(action==='backPage'){tab='home';render();window.scrollTo({top:0,behavior:'instant'});}
   else if(action==='startTrial')emit('startTrial');
   else if (action==='openAdmin') {
     if (!profile?.admin || room?.phase==='active') return;
