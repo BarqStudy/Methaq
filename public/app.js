@@ -52,6 +52,7 @@ let purchaseBusy = false;
 let activityDay;
 let adminData, adminSearch = '', adminBusy = false, blocked = false;
 let appearanceRequest = 0, appearanceSaveTimer, visualUpdatePending = false;
+let tourIndex=-1,tourPositionTimer;
 const guestId = sessionStorage.getItem('methaq-guest') || Array.from(crypto.getRandomValues(new Uint8Array(18)), b=>b.toString(16).padStart(2,'0')).join('');
 sessionStorage.setItem('methaq-guest',guestId);
 const name = new URLSearchParams(location.search).get('name') || 'ضيف ميثاق';
@@ -61,6 +62,57 @@ function toast(message) {
   clearTimeout(noticeTimeout);
   noticeTimeout = setTimeout(() => notice.textContent = '',3800);
 }
+const tourSteps=[
+  {selector:'.student-profile',title:'حسابك في ميثاق',text:'هنا تظهر هويتك، لقبك، وشارة عضويتك النشطة.'},
+  {selector:'.home-timer',title:'حدّد وقت التركيز',text:'حرّك مقبض الدائرة مع عقارب الساعة، أو اختر مدة سريعة أسفلها.'},
+  {selector:'#create-session-form',title:'أنشئ غرفة تركيز',text:'الهدف اختياري. أنشئ الغرفة ثم أرسل رمزها أو دعوتها لشريكك.'},
+  {selector:'[data-tab="rooms"]',title:'انضم إلى شريكك',text:'استخدم صفحة الغرف لإدخال الرمز أو قبول دعوة مباشرة.'},
+  {selector:'[data-tab="store"]',title:'المتجر والثيمات',text:'رصيد نقاطك، العناصر، والثيمات كلها موجودة داخل المتجر.'}
+];
+const tourStorageKey=()=>`methaq.tour.v1.${user?.id||guestId}`;
+function positionTour(){
+  const layer=document.querySelector('.tour-layer');
+  const target=document.querySelector(tourSteps[tourIndex]?.selector);
+  if(!layer||!target)return;
+  const rect=target.getBoundingClientRect();
+  const highlight=layer.querySelector('.tour-highlight');
+  Object.assign(highlight.style,{left:Math.max(6,rect.left-6)+'px',top:Math.max(6,rect.top-6)+'px',width:Math.min(innerWidth-12,rect.width+12)+'px',height:Math.min(innerHeight-12,rect.height+12)+'px'});
+  const card=layer.querySelector('.tour-card');
+  const width=Math.min(350,innerWidth-28);
+  card.style.width=width+'px';
+  card.style.left=Math.max(14,Math.min(innerWidth-width-14,rect.left+rect.width/2-width/2))+'px';
+  const height=card.offsetHeight;
+  const below=innerHeight-rect.bottom;
+  card.style.top=(below>=height+24?Math.min(innerHeight-height-14,rect.bottom+16):Math.max(14,rect.top-height-16))+'px';
+  card.classList.toggle('points-up',below>=height+24);
+}
+function showTourStep(){
+  const step=tourSteps[tourIndex];
+  const target=document.querySelector(step?.selector);
+  if(!step||!target)return endTour(true);
+  let layer=document.querySelector('.tour-layer');
+  if(!layer){layer=document.createElement('div');layer.className='tour-layer';document.body.append(layer);}
+  const last=tourIndex===tourSteps.length-1;
+  layer.innerHTML=`<div class="tour-highlight"></div><section class="tour-card" role="dialog" aria-modal="true" aria-labelledby="tour-title"><button type="button" class="tour-close" data-action="tourSkip" aria-label="تخطي الجولة">×</button><small>${num(tourIndex+1)} من ${num(tourSteps.length)}</small><h2 id="tour-title">${step.title}</h2><p>${step.text}</p><div class="tour-progress">${tourSteps.map((_,index)=>`<i class="${index<=tourIndex?'done':''}"></i>`).join('')}</div><div class="tour-actions">${tourIndex?'<button type="button" class="plain" data-action="tourPrevious">السابق</button>':'<button type="button" class="plain" data-action="tourSkip">تخطي الجولة</button>'}<button type="button" class="primary" data-action="tourNext">${last?'ابدأ الآن':'التالي'}</button></div></section>`;
+  target.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'center',inline:'center'});
+  clearTimeout(tourPositionTimer);tourPositionTimer=setTimeout(positionTour,260);
+}
+function startTour(){
+  if(room?.phase==='active')return toast('الجولة متاحة بعد انتهاء جلسة التركيز.');
+  if(dialog.open)dialog.close();
+  tab='home';render(true);tourIndex=0;
+  requestAnimationFrame(showTourStep);
+}
+function endTour(save=true){
+  document.querySelector('.tour-layer')?.remove();tourIndex=-1;clearTimeout(tourPositionTimer);
+  if(save)try{localStorage.setItem(tourStorageKey(),'done');}catch{/* Private mode. */}
+}
+function maybeStartTour(){
+  let completed=false;try{completed=localStorage.getItem(tourStorageKey())==='done';}catch{/* Private mode. */}
+  if(!completed&&!room&&!blocked)setTimeout(()=>!room&&tourIndex<0&&startTour(),700);
+}
+addEventListener('resize',()=>tourIndex>=0&&positionTour());
+addEventListener('scroll',()=>tourIndex>=0&&requestAnimationFrame(positionTour),{passive:true});
 function emit(event,payload={}) {
   if (!socket?.connected) return toast('الاتصال غير متاح حاليًا.');
   socket.timeout(12000).emit(event,payload,(error,response) => {
@@ -564,6 +616,7 @@ function openAppearance() {
       <input id="glass-range" type="range" min="${glassRange.min}" max="${glassRange.max}" value="${appearance.transparency}" ${isPaid()?'':'disabled aria-describedby="glass-lock"'}>
       ${isPaid()?'':'<p class="bodycopy" id="glass-lock">تحكّم بالشفافية مع برو وسبيشل.</p>'}
     </section>
+    ${button('startTour','إعادة الجولة التعريفية','plain','map')}
     ${!isPaid() && room?.phase!=='active' ? button('seePlans','عرض العضويات','secondary','crown') : ''}
     ${adminAccessDetails()}</div>`;
   if (!dialog.open) dialog.showModal();
@@ -858,7 +911,12 @@ document.addEventListener('click',event=>{
   const b = event.target.closest('[data-action]');
   if (!b) return;
   const {action,value}=b.dataset;
-  if (action==='duration') {
+  if(action==='tourNext'){
+    if(tourIndex>=tourSteps.length-1)endTour(true);else{tourIndex++;showTourStep();}
+  } else if(action==='tourPrevious'){tourIndex=Math.max(0,tourIndex-1);showTourStep();}
+  else if(action==='tourSkip')endTour(true);
+  else if(action==='startTour')startTour();
+  else if (action==='duration') {
     if (!durationAllowed(+value)) return premiumDuration(+value);
     chosen=+value; render(true);
   } else if (action==='appearanceMenu') openAppearance();
@@ -1073,6 +1131,7 @@ socket.on('hello', data=>{
   ({user,bot,shortName}=data);
   updateProfile(data.profile);
   presence();
+  maybeStartTour();
 });
 socket.on('profile',updateProfile);
 socket.on('room', next=>{
