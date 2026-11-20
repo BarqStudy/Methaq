@@ -43,7 +43,7 @@ document.querySelectorAll('i[data-icon]').forEach(i => i.style.setProperty('--ic
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num = (v) => Number(v || 0).toLocaleString('ar',{numberingSystem:'arab'});
 const remainingTime=(value,now=Date.now())=>{const minutes=Math.max(0,Math.ceil((value-now)/60000));const days=Math.floor(minutes/1440);const hours=Math.floor((minutes%1440)/60);const rest=minutes%60;return [days&&num(days)+' يوم',hours&&num(hours)+' ساعة',!days&&!hours&&num(rest)+' دقيقة'].filter(Boolean).join(' و ');};
-let room, socket, user, profile, bot, shortName, clockOffset = 0, chosen = 5, tab = 'home', category = 0, goal = '', pact = '', inviteDismissed = false;
+let room, socket, user, profile, bot, shortName, clockOffset = 0, chosen = 5, tab = invite?'rooms':'home', category = 0, goal = '', pact = '', inviteDismissed = false;
 let viewKey, noticeTimeout, revisited, lastActivity = 0, lastCheck, audio, ambience;
 let preparingInvite = false, incomingInvite;
 let appearanceOpen = false, checkoutOpen = false, expiryTimer, glassPreview, glassRequest = 0;
@@ -89,10 +89,9 @@ function account() {
   membershipControl.hidden=false;
   membershipControl.classList.toggle('is-member',Boolean(tier&&tier!=='free'));
   membershipControl.innerHTML=tier&&tier!=='free'?icon(plans[tier].icon)+' '+plans[tier].title:icon('crown')+' ترقية';
-  const temporary=(p.pointGrants||[]).map(grant=>`<small class="point-expiry" data-point-expiry="${grant.expiresAt}" data-point-amount="${grant.amount}">−${num(grant.amount)} خلال <b>${remainingTime(grant.expiresAt)}</b></small>`).join('');
   const accountElement = document.querySelector('#account');
-  const content = `<span class="metric streak-stat"><span class="metric-icon">${icon('flame')}</span><span>السلسلة <strong>${num(p.streak)}</strong></span></span>
-    <span class="metric points-stat"><span class="metric-icon">${icon('sparkles')}</span><span>النقاط <strong>${num(p.points)}</strong>${temporary}</span></span>`;
+  const content = '';
+  accountElement.hidden=true;
   if (accountElement.dataset.content !== content) {
     accountElement.innerHTML = content;
     accountElement.dataset.content = content;
@@ -114,13 +113,21 @@ function decorationIcon() {
   const key = profile?.equipped?.decoration;
   return key ? '<span class="decoration-art" aria-hidden="true">'+icon(items[key][3])+'</span>' : '';
 }
+function membershipMark(tier){
+  if(tier==='pro')return `<span class="member-mark pro-mark" title="عضو برو" aria-label="عضو برو"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 2.7l3.2 3 4.4-.4 1.8 4 4 1.8-.4 4.4 3 3.2-3 3.2.4 4.4-4 1.8-1.8 4-4.4-.4-3.2 3-3.2-3-4.4.4-1.8-4-4-1.8.4-4.4-3-3.2 3 3.2-3 4.4.4 1.8 4 4 1.8-.4 4.4z"/><path class="member-glyph" d="M10.5 13.2l3.2 2.6 2.3-5 2.3 5 3.2-2.6-1.2 7.2h-8.6z"/></svg></span>`;
+  if(tier==='special')return `<span class="member-mark special-mark" title="عضو سبيشل" aria-label="عضو سبيشل"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 1.8l4.1 5.5 6.7-.7-.7 6.7 5.5 4.1-5.5 4.1.7 6.7-6.7-.7-4.1 5.5-4.1-5.5-6.7.7.7-6.7-5.5-4.1 5.5-4.1-.7-6.7 6.7.7z"/><path class="member-glyph" d="M10 13l6-5 6 5-6 9z"/></svg></span>`;
+  return '';
+}
 function studentProfile() {
   const equipped = profile?.equipped;
+  const tier=profile?.plan?.tier;
+  const badge=membershipMark(tier);
+  const temporary=(profile?.pointGrants||[]).reduce((sum,grant)=>sum+Number(grant.amount||0),0);
   return `<section class="panel student-profile" ${decorationStyle()}>
     ${decorationIcon()}
-    ${avatar({...user,equipped})}<div><strong>${esc(user?.name || 'ضيف ميثاق')}</strong>
+    ${avatar({...user,equipped})}<div class="student-copy"><strong class="student-name">${esc(user?.name || 'ضيف ميثاق')} ${badge}</strong>
     <small>${items[equipped?.title]?.[1] || 'رفيق تركيز'}</small>
-    </div></section>`;
+    </div><div class="profile-points">${icon('sparkles')}<span><strong>${num(profile?.points)}</strong><small>نقطة${temporary?' · مؤقتة '+num(temporary):''}</small></span></div></section>`;
 }
 function pendingInvite() {
   if (!incomingInvite || isInvite()) return '';
@@ -133,31 +140,31 @@ function dial(text,label,progress=0,interactive=false) {
   <span class="satellite one">${icon('user-round')}</span><span class="satellite two">${icon('user-round')}</span></div>`;
 }
 function home() {
-  const joining = isInvite();
   return `<div class="inner focus-home">
     ${studentProfile()}
-    ${pendingInvite()}
-    ${joining ? `<section class="intro"><h1>لديك دعوة للتركيز</h1><p>انضم مباشرة، ويمكنك كتابة هدف مختصر إن رغبت.</p></section>` : `
     <section class="panel preview home-timer" ${decorationStyle()} aria-labelledby="focus-timer-title">
-      <div class="preview-top"><h1 id="focus-timer-title">مؤقت التركيز</h1><span class="tag"><span class="dot"></span> جلسة ثنائية</span></div>
+      <div class="preview-top"><span class="tag"><span class="dot"></span> جلسة ثنائية</span></div>
       ${decorationIcon()}
       ${dial(chosen+':00','',durationDialProgress(chosen),true)}
       <p class="preview-note">${icon('users')} يبدأ المؤقت بعد موافقة الطرفين</p>
     </section>
-    <section class="duration-picker" aria-label="اختيار سريع للمدة"><div class="duration-picker-head"><span>${icon('clock-3')} اختيار سريع</span><small>بالدقائق</small></div><div class="durations" role="group" aria-label="مدة الجلسة">${durations.map(m=>`<button type="button" class="duration ${m===chosen?'on':''}" data-action="duration" data-value="${m}" aria-pressed="${m===chosen}"><strong>${num(m)}</strong><span>دقيقة</span>${!durationAllowed(m)?icon('lock-keyhole'):''}</button>`).join('')}</div></section>`}
-    <form class="panel form-main" id="session-form"><div class="panel-title"><span class="tile-icon">${icon('sliders-horizontal')}</span><div><h2>${joining?'انضم إلى الجلسة':'إعداد الجلسة'}</h2></div></div>
+    <section class="duration-picker" aria-label="اختيار سريع للمدة"><div class="duration-picker-head"><span>${icon('clock-3')} اختيار سريع</span><small>بالدقائق</small></div><div class="durations" role="group" aria-label="مدة الجلسة">${durations.map(m=>`<button type="button" class="duration ${m===chosen?'on':''}" data-action="duration" data-value="${m}" aria-pressed="${m===chosen}"><strong>${num(m)}</strong><span>دقيقة</span>${!durationAllowed(m)?icon('lock-keyhole'):''}</button>`).join('')}</div></section>
+    <form class="panel form-main" id="create-session-form"><div class="panel-title"><span class="tile-icon">${icon('plus')}</span><div><h2>إنشاء غرفة</h2></div></div>
     <label class="field">هدف الجلسة <small class="optional">اختياري</small><input maxlength="160" name="goal" placeholder="ماذا ستنجز في هذه الجلسة؟" value="${esc(goal)}"></label>
-    <button class="primary wide create-room-cta">${joining?icon('log-in'):'<span class="cta-cube" aria-hidden="true">'+icon('plus')+'</span>'}<span>${joining?'الانضمام إلى الغرفة':'ابدأ ميثاقك وأنشئ غرفة'}</span>${joining?'':'<small>وادعُ شريكك للتركيز معًا</small>'}</button>
-    ${joining?button('ignore','العودة للرئيسية','plain'):''}</form>
-    ${joining?'':`<form id="join-code-form" class="panel join-code"><label class="field">عندك رمز غرفة؟<input name="code" dir="ltr" maxlength="10" placeholder="رمز الغرفة" required></label><button class="secondary">${icon('log-in')} انضم بالرمز</button></form>`}
-    <div class="pact-bar"><span class="tile-icon">${icon('shield-check')}</span><div><strong>ميثاق الجلسة</strong><p>عند الإتمام تمنح المنصة كل طرف ${num(rewards.achievement)} نقطة إنجاز.</p></div><span class="tag">${icon('sparkles')} مكافأة</span></div></div>`;
+    <button class="primary wide create-room-cta"><span class="cta-cube" aria-hidden="true">${icon('plus')}</span><span>ابدأ ميثاقك وأنشئ غرفة</span><small>وادعُ شريكك للتركيز معًا</small></button></form></div>`;
+}
+function roomsPage(){
+  const joining=isInvite();
+  return `<div class="inner rooms-page">${heading('الغرف','انضم إلى شريكك برمز الغرفة أو عبر دعوة مباشرة.')}${pendingInvite()}
+    ${joining?`<section class="panel join-invite-card"><span class="tile-icon">${icon('user-round-plus')}</span><h2>دعوة جاهزة للانضمام</h2><p class="bodycopy">اكتب هدفًا مختصرًا إن رغبت، ثم ادخل غرفة الاستعداد مباشرة.</p><form id="join-session-form"><label class="field">هدف الجلسة <small class="optional">اختياري</small><input maxlength="160" name="goal" placeholder="ماذا ستنجز؟" value="${esc(goal)}"></label><button class="primary wide">${icon('log-in')} الانضمام إلى الغرفة</button></form>${button('ignore','إلغاء الدعوة','plain','x')}</section>`:`<form id="join-code-form" class="panel room-code-join"><span class="room-join-icon">${icon('door-open')}</span><div><h2>انضم برمز الغرفة</h2><p class="bodycopy">اطلب الرمز المكوّن من ١٠ خانات من شريكك.</p></div><label class="field"><input name="code" dir="ltr" maxlength="10" placeholder="رمز الغرفة" required></label><button class="primary wide">${icon('log-in')} دخول غرفة الاستعداد</button></form>`}
+  </div>`;
 }
 function person(p, active=false) {
   if (!p) return `<article class="panel person">${avatar()}<div><h3>شريك التركيز</h3><p>بانتظار الانضمام</p></div></article>`;
   const status = active ? p.exitAt ? '<span style="color:var(--danger)">حاول الخروج! <b data-exit="'+p.exitAt+'"></b></span>'
     : '<span class="dot pulse"></span> يركز الآن'
     : p.ready ? 'وافق على الميثاق' : 'بانتظار الموافقة';
-  return `<article class="panel person">${avatar(p)}<div><h3>${esc(p.name)} ${p.id===user?.id?' <small class="muted">(أنت)</small>':''}</h3>
+  return `<article class="panel person">${avatar(p)}<div><h3 class="student-name">${esc(p.name)} ${membershipMark(p.tier)} ${p.id===user?.id?' <small class="muted">(أنت)</small>':''}</h3>
   ${p.equipped?.title?'<small class="gold">'+items[p.equipped.title][1]+'</small>':''}<p>${esc(p.goal)}</p><span class="tag">${status}</span></div></article>`;
 }
 const pair = (active) => '<div class="pair">'+person(room.members.find(p=>p.id===user?.id),active)+person(room.members.find(p=>p.id!==user?.id),active)+'</div>';
@@ -300,6 +307,7 @@ function plansPage(){return `<div class="inner store-page">${heading('الاشت
 function store() {
   const p = profile;
   return `<div class="inner store-page">${heading('متجر ميثاق','رصيدك الحالي '+num(p?.points)+' نقطة')}
+  <section class="panel store-theme-entry"><span class="tile-icon">${icon('palette')}</span><div><h2>المظهر والثيمات</h2><p class="bodycopy">الوضع ${profile?.appearance?.mode==='dark'?'الليلي':'النهاري'} · ${palettes[profile?.appearance?.palette || 'emerald'].label}، وثيمات تخصصية كاملة.</p></div>${button('appearanceMenu','تخصيص المظهر','secondary','sliders-horizontal')}</section>
   <form id="redeem-code-form" class="panel join-code redeem-code">
     <label class="field"><strong>عندك كود؟ فعّله الآن</strong><small class="code-hint"> افتح مزايا عضويتك فورًا</small><input name="code" dir="ltr" maxlength="21" placeholder="MTHQ-…" required></label>
     <button class="secondary">${icon('ticket-check')} فعّل الكود</button>
@@ -661,7 +669,7 @@ function render(force=false) {
   const phase = !revisited && room?.phase;
   const key = [tab,phase,room?.id,isInvite()].join('|');
   if (force || key!==viewKey || ['active','lobby','outcome'].includes(phase)) {
-    const content = blocked ? '<div class="inner">'+heading('الحساب محظور','تواصل مع مشرف ميثاق للمساعدة.')+'</div>' : tab==='admin'?adminPage():tab==='stats'?stats():tab==='store'?store():tab==='inventory'?inventoryPage():tab==='plans'?plansPage():tab==='themes'?themes():phase==='lobby'?lobby():phase==='active'?active():phase==='outcome'?outcome():home();
+    const content = blocked ? '<div class="inner">'+heading('الحساب محظور','تواصل مع مشرف ميثاق للمساعدة.')+'</div>' : tab==='admin'?adminPage():tab==='rooms'?roomsPage():tab==='stats'?stats():tab==='store'?store():tab==='inventory'?inventoryPage():tab==='plans'?plansPage():phase==='lobby'?lobby():phase==='active'?active():phase==='outcome'?outcome():home();
     if (page.dataset.content !== content) {
       const previous = document.activeElement;
       const selector = previous?.dataset.action && '[data-action="'+previous.dataset.action+'"][data-value="'+previous.dataset.value+'"]';
@@ -901,7 +909,7 @@ document.addEventListener('click',event=>{
   else if (action==='acceptInvite') {
     if (!incomingInvite || (room && room.phase!=='outcome')) return;
     invite=incomingInvite.code; incomingInvite=null; inviteDismissed=false;
-    revisited=room?.phase==='outcome'; tab='home'; render(true);
+    revisited=room?.phase==='outcome'; tab='rooms'; render(true);
     window.scrollTo({top:0,behavior:'instant'});
   } else if (action==='dismissInvite') { incomingInvite=null; render(true); }
   else if (action==='filter') { category=+value; render(true); }
@@ -952,7 +960,7 @@ page.addEventListener('pointerdown',event=>{
 page.addEventListener('input',event=>{
   if (event.target.name==='goal') goal=event.target.value;
   if (event.target.name==='pact') pact=event.target.value;
-  if (page.querySelector('#session-form')) page.dataset.content=home();
+  if (page.querySelector('#create-session-form')) page.dataset.content=home();
 });
 page.addEventListener('submit',event=>{
   const formElement = event.target;
@@ -999,9 +1007,10 @@ page.addEventListener('submit',event=>{
     }
     return;
   }
-  if (event.target.id!=='session-form') return;
+  if (!['create-session-form','join-session-form'].includes(event.target.id)) return;
   event.preventDefault();
-  emit(isInvite()?'join':'create',isInvite()?{code:invite,goal}:{minutes:chosen,goal});
+  if(event.target.id==='join-session-form')emit('join',{code:invite,goal});
+  else emit('create',{minutes:chosen,goal});
 });
 const presence = () => {
   if (socket?.connected && room?.phase==='active') socket.emit('presence',{hidden:document.hidden},()=>{});
@@ -1092,7 +1101,7 @@ socket.on('directInvite', data=>{
   incomingInvite=data;
   if (!room || room.phase==='outcome') {
     if (room?.phase==='outcome') revisited=true;
-    tab='home'; render(true);
+    tab='rooms'; render(true);
     window.scrollTo({top:0,behavior:'instant'});
   }
 });

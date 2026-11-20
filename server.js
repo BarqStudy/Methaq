@@ -537,7 +537,8 @@ io.on('connection', async(socket) => {
     if (old && old.phase !== 'outcome') fail('أكمل غرفتك الحالية أولًا.');
     if (old) io.in(playerRoom).socketsLeave(old.id);
     const equipped=JSON.parse((await query('SELECT equipped FROM players WHERE id=?',id))?.equipped||'{}');
-    room.members.push({ id, name:user.name, photo:user.photo, goal, ready:false, activity:clock.now(),equipped });
+    const tier=(await membership.planStatus(id)).tier;
+    room.members.push({ id, name:user.name, photo:user.photo, goal, ready:false, activity:clock.now(),equipped,tier });
     memberships.set(id,room.id);
     io.in(playerRoom).socketsJoin(room.id);
     await send(room);

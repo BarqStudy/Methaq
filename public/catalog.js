@@ -1,4 +1,4 @@
-export const sections = ['الحماية والوقت','الأجواء والثيمات','الألقاب والشارات','التفاعلات','ثيمات تزيينية'];
+export const sections = ['الحماية والوقت','الأجواء والثيمات','الألقاب والشارات','التفاعلات','الثيمات والتخصصات'];
 export const specialties = {
   medic: ['الطب','stethoscope','#48c7b8','#91d5e9'],
   engineer: ['الهندسة','drafting-compass','#eeb36f','#c998ef'],
