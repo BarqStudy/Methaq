@@ -127,7 +127,7 @@ function studentProfile() {
     ${decorationIcon()}
     ${avatar({...user,equipped,tier})}<div class="student-copy"><strong class="student-name">${esc(user?.name || 'ضيف ميثاق')} ${badge}</strong>
     <small>${items[equipped?.title]?.[1] || 'رفيق تركيز'}</small>
-    </div><div class="profile-points">${icon('sparkles')}<span><strong>${num(profile?.points)}</strong><small>نقطة${temporary?' · مؤقتة '+num(temporary):''}</small></span></div></section>`;
+    </div><div class="profile-points">${icon('sparkles')}<span><strong>${num(profile?.points)}</strong><small>${temporary?'منها '+num(temporary)+' مؤقتة':'رصيد النقاط'}</small></span></div></section>`;
 }
 function pendingInvite() {
   if (!incomingInvite || isInvite()) return '';
