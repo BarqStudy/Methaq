@@ -125,8 +125,9 @@ function pendingInvite() {
   return `<section class="panel direct-banner"><p><strong>${esc(incomingInvite.name)}</strong> يدعوك لجلسة ${num(incomingInvite.minutes)} دقيقة.</p>
     <div class="actions">${button('acceptInvite','انضمام','primary','user-round-plus')}${button('dismissInvite','تجاهل','plain')}</div></section>`;
 }
+const dialHandlePosition=progress=>{const angle=progress*3.6*Math.PI/180;return `left:${50+48*Math.sin(angle)}%;top:${50-48*Math.cos(angle)}%`;};
 function dial(text,label,progress=0,interactive=false) {
-  return `<div class="orbit"><div class="dial ${interactive?'interactive-dial':''}" style="--progress:${progress}" ${interactive?'role="slider" aria-label="مدة الجلسة" aria-valuemin="25" aria-valuemax="180" aria-valuenow="'+chosen+'" tabindex="0"':''}><div class="dial-content">${icon('lock-keyhole')}<strong class="digits" id="digits">${text}</strong><small id="dial-label">${label}</small></div></div>
+  return `<div class="orbit"><div class="dial ${interactive?'interactive-dial':''}" style="--progress:${progress}" ${interactive?'role="slider" aria-label="مدة الجلسة" aria-valuemin="25" aria-valuemax="180" aria-valuenow="'+chosen+'" tabindex="0"':''}>${interactive?`<span class="dial-handle" style="${dialHandlePosition(progress)}" aria-hidden="true"></span>`:''}<div class="dial-content">${icon('lock-keyhole')}<strong class="digits" id="digits">${text}</strong><small id="dial-label">${label}</small></div></div>
   <span class="satellite one">${icon('user-round')}</span><span class="satellite two">${icon('user-round')}</span></div>`;
 }
 function home() {
@@ -867,7 +868,7 @@ document.addEventListener('click',event=>{
   else if (action==='adminCopy') {
     navigator.clipboard?.writeText(value).then(()=>toast('نُسخ الكود.'),()=>toast('حدد الكود وانسخه يدويًا.'));
   }
-  else if (action==='goHome') { if(room?.phase==='outcome')revisited=true;tab='home'; render(true); window.scrollTo({top:0,behavior:'instant'}); }
+  else if (action==='goHome') { if(room?.phase==='outcome'){revisited=true;emit('dismissOutcome');room=null;}tab='home'; render(true); window.scrollTo({top:0,behavior:'instant'}); }
   else if (action==='activityDay') { activityDay=value; render(true); }
   else if (action==='copyReferralCode') copyInvite('#my-referral-code','نُسخ كود دعوتك.');
   else if (action==='copyReferralLink' || action==='shareReferral') shareReferral(action==='copyReferralLink');
@@ -888,7 +889,7 @@ document.addEventListener('click',event=>{
   else if (action==='close') dialog.close();
   else if (action==='confirmWithdraw') { dialog.close(); emit('withdraw'); }
   else if (action==='check') { dialog.close(); emit('check'); }
-  else if (action==='reset') { revisited=true; render(true); }
+  else if (action==='reset') { revisited=true;emit('dismissOutcome');room=null;tab='home';render(true); }
   else if (action==='shareCard') shareCard().catch(()=>toast('تعذرت مشاركة البطاقة.'));
   else if (action==='answerPause') emit(action,{accept:value==='yes'});
   else if (action==='result') emit(action,{done:value==='yes'});
@@ -905,6 +906,7 @@ page.addEventListener('pointerdown',event=>{
     if(angle<0)angle+=360;
     candidate=Math.max(25,Math.min(180,Math.round((25+angle/360*155)/5)*5));
     dialControl.style.setProperty('--progress',dialProgress(candidate));
+    const handle=dialControl.querySelector('.dial-handle');if(handle)handle.style.cssText=dialHandlePosition(dialProgress(candidate));
     dialControl.setAttribute('aria-valuenow',candidate);
     dialControl.querySelector('.digits').textContent=candidate+':00';
   };

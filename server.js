@@ -289,8 +289,20 @@ async function leaveWaitingRoom(room, id) {
   if (!room.members.length){rooms.delete(room.id);await run('DELETE FROM live_rooms WHERE id=?',room.id);}else await send(room);
 }
 
+async function dismissOutcome(room,id){
+  if(room?.phase!=='outcome')return;
+  room.dismissed ||= [];
+  if(!room.dismissed.includes(id))room.dismissed.push(id);
+  memberships.delete(id);
+  const playerRoom='player:'+id;
+  io.in(playerRoom).socketsLeave(room.id);
+  io.to(playerRoom).emit('room',null);
+  if(room.members.every(member=>room.dismissed.includes(member.id))){rooms.delete(room.id);await run('DELETE FROM live_rooms WHERE id=?',room.id);}
+  else await saveRoom(room,true);
+}
+
 for(const row of await db.all('SELECT state FROM live_rooms')){
-  try{const room=JSON.parse(row.state);if(room?.id&&room?.members){await Promise.all(room.members.map(async member=>{member.exitAt=null;member.checkUntil=null;member.activity=clock.now();member.equipped=JSON.parse((await query('SELECT equipped FROM players WHERE id=?',member.id))?.equipped||'{}');memberships.set(member.id,room.id);}));rooms.set(room.id,room);}}catch{/* Ignore corrupt room snapshots. */}
+  try{const room=JSON.parse(row.state);if(room?.id&&room?.members){await Promise.all(room.members.map(async member=>{member.exitAt=null;member.checkUntil=null;member.activity=clock.now();member.equipped=JSON.parse((await query('SELECT equipped FROM players WHERE id=?',member.id))?.equipped||'{}');if(!room.dismissed?.includes(member.id))memberships.set(member.id,room.id);}));rooms.set(room.id,room);}}catch{/* Ignore corrupt room snapshots. */}
 }
 
 io.use(async(socket,next) => {
@@ -565,6 +577,7 @@ io.on('connection', async(socket) => {
     io.to('player:'+recipient.data.user.id).emit('directInvite',{code:room.id, name:user.name, minutes:room.minutes});
   });
   action('leaveLobby', () => leaveWaitingRoom(current(),id));
+  action('dismissOutcome',()=>dismissOutcome(current(),id));
   action('ready', async() => {
     const room = current();
     if (room?.phase !== 'lobby') return;
