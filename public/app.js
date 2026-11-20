@@ -781,6 +781,18 @@ function modal(title,text,buttons) {
   dialog.innerHTML = `<div class="stack"><h2>${title}</h2><p class="bodycopy">${text}</p><div class="actions">${buttons}</div></div>`;
   if (!dialog.open) dialog.showModal();
 }
+async function submitGoalResult(done){
+  if(!socket?.connected)return toast('الاتصال غير متاح حاليًا.');
+  try{
+    const response=await socket.timeout(6000).emitWithAck('result',{done});
+    if(response?.error)throw new Error(response.error);
+    if(done){
+      revisited=true;socket.emit('dismissOutcome',{},()=>{});room=null;tab='home';render(true);window.scrollTo({top:0,behavior:'instant'});
+    }else{
+      modal('نكمل الهدف بجلسة جديدة؟','ما أنجزته اليوم خطوة ممتازة. أنشئ غرفة جديدة وأكمل هدفك مع شريك تركيز.',button('newGoalSession','إنشاء غرفة جديدة','primary','plus')+button('close','البقاء هنا','secondary'));
+    }
+  }catch(error){toast(error.message||'تعذّر حفظ إجابتك.');}
+}
 const vibe = () => {
   if (tg?.initData) tg.HapticFeedback?.impactOccurred('medium');
   else navigator.vibrate?.(120);
@@ -988,7 +1000,8 @@ document.addEventListener('click',event=>{
   else if (action==='reset') { revisited=true;emit('dismissOutcome');room=null;tab='home';render(true); }
   else if (action==='shareCard') shareCard().catch(()=>toast('تعذرت مشاركة البطاقة.'));
   else if (action==='answerPause') emit(action,{accept:value==='yes'});
-  else if (action==='result') emit(action,{done:value==='yes'});
+  else if (action==='result') submitGoalResult(value==='yes');
+  else if (action==='newGoalSession') {if(dialog.open)dialog.close();revisited=true;emit('dismissOutcome');room=null;tab='home';render(true);window.scrollTo({top:0,behavior:'instant'});}
   else emit(action,{item:value});
 });
 page.addEventListener('pointerdown',event=>{
