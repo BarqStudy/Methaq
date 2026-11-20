@@ -50,7 +50,8 @@ test('two-person pact synchronizes and settles rewards, purchases, and withdrawa
   async function begin() {
     const created = waitFor(a,'room',r=>r.phase==='lobby' && r.members.length===1);
     assert.deepEqual(await command(a,'create',{minutes:25,goal:'مراجعة الفصل'}),{ok:true});
-    const {id} = await created;
+    const {id,code} = await created;
+    assert.match(code,/^\d{5}$/);
     assert.deepEqual(await command(a,'ready'),{ok:true});
     assert.deepEqual(await command(b,'join',{code:id,goal:'كتابة التقرير'}),{ok:true});
     assert.ok((await command(c,'join',{code:id,goal:'القراءة'})).error);

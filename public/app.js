@@ -155,7 +155,7 @@ function home() {
 function roomsPage(){
   const joining=isInvite();
   return `<div class="inner rooms-page">${heading('الغرف','انضم إلى شريكك برمز الغرفة أو عبر دعوة مباشرة.')}${pendingInvite()}
-    ${joining?`<section class="panel join-invite-card"><span class="tile-icon">${icon('user-round-plus')}</span><h2>دعوة جاهزة للانضمام</h2><p class="bodycopy">اكتب هدفًا مختصرًا إن رغبت، ثم ادخل غرفة الاستعداد مباشرة.</p><form id="join-session-form"><label class="field">هدف الجلسة <small class="optional">اختياري</small><input maxlength="160" name="goal" placeholder="ماذا ستنجز؟" value="${esc(goal)}"></label><button class="primary wide">${icon('log-in')} الانضمام إلى الغرفة</button></form>${button('ignore','إلغاء الدعوة','plain','x')}</section>`:`<form id="join-code-form" class="panel room-code-join"><span class="room-join-icon">${icon('door-open')}</span><div><h2>انضم برمز الغرفة</h2><p class="bodycopy">اطلب الرمز المكوّن من ١٠ خانات من شريكك.</p></div><label class="field"><input name="code" dir="ltr" maxlength="10" placeholder="رمز الغرفة" required></label><button class="primary wide">${icon('log-in')} دخول غرفة الاستعداد</button></form>`}
+    ${joining?`<section class="panel join-invite-card"><span class="tile-icon">${icon('user-round-plus')}</span><h2>دعوة جاهزة للانضمام</h2><p class="bodycopy">اكتب هدفًا مختصرًا إن رغبت، ثم ادخل غرفة الاستعداد مباشرة.</p><form id="join-session-form"><label class="field">هدف الجلسة <small class="optional">اختياري</small><input maxlength="160" name="goal" placeholder="ماذا ستنجز؟" value="${esc(goal)}"></label><button class="primary wide">${icon('log-in')} الانضمام إلى الغرفة</button></form>${button('ignore','إلغاء الدعوة','plain','x')}</section>`:`<form id="join-code-form" class="panel room-code-join"><span class="room-join-icon">${icon('door-open')}</span><div><h2>انضم برمز الغرفة</h2><p class="bodycopy">اطلب الرمز المكوّن من ٥ أرقام من شريكك.</p></div><label class="field"><input name="code" dir="ltr" maxlength="5" inputmode="numeric" pattern="[0-9]{5}" placeholder="رمز الغرفة" required></label><button class="primary wide">${icon('log-in')} دخول غرفة الاستعداد</button></form>`}
   </div>`;
 }
 function person(p, active=false) {
@@ -1001,7 +1001,7 @@ page.addEventListener('submit',event=>{
     if (event.target.id==='direct-invite-form') emit('directInvite',{handle:form.get('handle')});
     else {
       const code=form.get('code').trim().toUpperCase();
-      if (!/^[A-F0-9]{10}$/.test(code)) return toast('اكتب رمز الغرفة المكوّن من ١٠ خانات.');
+      if (!/^\d{5}$/.test(code)) return toast('اكتب رمز الغرفة المكوّن من ٥ أرقام.');
       invite=code;inviteDismissed=false;emit('join',{code,goal:''});
     }
     return;

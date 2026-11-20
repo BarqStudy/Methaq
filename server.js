@@ -1,6 +1,6 @@
 import express from 'express';
 import { createServer } from 'node:http';
-import { createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomBytes, randomInt, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Server } from 'socket.io';
 import { Telegraf, Markup } from 'telegraf';
 import { items,glassRange,palettes,plans,rewards,successReward,referralPoints,specialOnly } from './public/catalog.js';
@@ -59,6 +59,7 @@ export const http = createServer(app);
 const io = new Server(http, { pingInterval:4000, pingTimeout:4000 });
 const rooms = new Map();
 const memberships = new Map();
+const newRoomCode=()=>{let code;do{code=String(randomInt(10000,100000));}while([...rooms.values()].some(room=>room.code===code));return code;};
 const minute = 60000;
 const validDuration=value=>Number.isInteger(value)&&value>=5&&value<=180&&value%5===0;
 const sessionBreak=value=>value<=25?5:value<=50?10:value<=90?12:value<=120?15:20;
@@ -305,7 +306,7 @@ async function dismissOutcome(room,id){
 }
 
 for(const row of await db.all('SELECT state FROM live_rooms')){
-  try{const room=JSON.parse(row.state);if(room?.id&&room?.members){await Promise.all(room.members.map(async member=>{member.exitAt=null;member.checkUntil=null;member.activity=clock.now();member.equipped=JSON.parse((await query('SELECT equipped FROM players WHERE id=?',member.id))?.equipped||'{}');if(!room.dismissed?.includes(member.id))memberships.set(member.id,room.id);}));rooms.set(room.id,room);}}catch{/* Ignore corrupt room snapshots. */}
+  try{const room=JSON.parse(row.state);if(room?.id&&room?.members){const changed=!/^\d{5}$/.test(room.code);if(changed)room.code=newRoomCode();await Promise.all(room.members.map(async member=>{member.exitAt=null;member.checkUntil=null;member.activity=clock.now();member.equipped=JSON.parse((await query('SELECT equipped FROM players WHERE id=?',member.id))?.equipped||'{}');if(!room.dismissed?.includes(member.id))memberships.set(member.id,room.id);}));rooms.set(room.id,room);if(changed)await saveRoom(room,true);}}catch{/* Ignore corrupt room snapshots. */}
 }
 
 io.use(async(socket,next) => {
@@ -550,17 +551,15 @@ io.on('connection', async(socket) => {
   action('create', async({ minutes, goal, pact }) => {
     if (!validDuration(minutes)) fail('اختر مدة بين ٥ و١٨٠ دقيقة بمضاعفات ٥.');
     if (minutes >= 120 && !await isPaid(id)) fail('جلسات ١٢٠ و١٨٠ دقيقة للمشتركين فقط.');
-    let roomId;
-    do { roomId = randomUUID().replaceAll('-',''); }
-    while ([...rooms.values()].some(room=>room.code===roomId.slice(0,10).toUpperCase()));
-    const room = { id:roomId, code:roomId.slice(0,10).toUpperCase(), phase:'lobby', created:clock.now(),
+    const roomId=randomUUID().replaceAll('-','');
+    const room = { id:roomId, code:newRoomCode(), phase:'lobby', created:clock.now(),
       minutes, pact:String(pact || '').trim().slice(0,160), members:[] };
     rooms.set(room.id,room);
     await enter(room,goalText(goal));
   });
   action('join', async({ code, goal }) => {
     const normalized = typeof code==='string' ? code.trim().toUpperCase() : '';
-    const room = rooms.get(normalized.toLowerCase()) || (/^[A-F0-9]{10}$/.test(normalized)
+    const room = rooms.get(normalized.toLowerCase()) || (/^\d{5}$/.test(normalized)
       ? [...rooms.values()].find(room=>room.code===normalized) : null);
     if (!room || room.phase !== 'lobby' || room.members.length >= 2) fail('الغرفة ممتلئة أو انتهت صلاحية الدعوة.');
     const inviter = room.members[0].id;
