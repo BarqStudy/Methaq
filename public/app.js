@@ -122,12 +122,11 @@ function studentProfile() {
   const equipped = profile?.equipped;
   const tier=profile?.plan?.tier;
   const badge=membershipMark(tier);
-  const temporary=(profile?.pointGrants||[]).reduce((sum,grant)=>sum+Number(grant.amount||0),0);
   return `<section class="panel student-profile" ${decorationStyle()}>
     ${decorationIcon()}
     ${avatar({...user,equipped,tier})}<div class="student-copy"><strong class="student-name">${esc(user?.name || 'ضيف ميثاق')} ${badge}</strong>
     <small>${items[equipped?.title]?.[1] || 'رفيق تركيز'}</small>
-    </div><div class="profile-points">${icon('sparkles')}<span><strong>${num(profile?.points)}</strong><small>${temporary?'منها '+num(temporary)+' مؤقتة':'رصيد النقاط'}</small></span></div></section>`;
+    </div></section>`;
 }
 function pendingInvite() {
   if (!incomingInvite || isInvite()) return '';
