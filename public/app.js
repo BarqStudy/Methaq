@@ -223,7 +223,7 @@ function roomsPage(){
   </div>`;
 }
 function person(p, active=false) {
-  if (!p) return `<button type="button" class="panel person waiting-person" data-action="openInviteOptions">${avatar()}<div><h3>شريك التركيز</h3><p>اضغط لدعوة شريكك</p><span class="tag">${icon('user-round-plus')} اختر طريقة الدعوة</span></div></button>`;
+  if (!p) return `<button type="button" class="panel person waiting-person" data-action="invite">${avatar()}<div><h3>شريك التركيز</h3><p>اضغط لإرسال رابط الدعوة</p><span class="tag">${icon('send')} دعوة عبر تليجرام</span></div></button>`;
   const status = active ? '<span class="dot pulse"></span> يركز الآن'
     : p.ready ? 'وافق على الميثاق' : 'بانتظار الموافقة';
   return `<article class="panel person">${avatar(p)}<div><h3 class="student-name">${esc(p.name)} ${membershipMark(p.tier)} ${p.id===user?.id?' <small class="muted">(أنت)</small>':''}</h3>
@@ -233,6 +233,7 @@ const pair = (active) => '<div class="pair">'+person(room.members.find(p=>p.id==
 function lobby() {
   const me = room.members.find(p=>p.id===user?.id);
   return `<div class="inner">${heading('غرفة الانتظار','جلسة تركيز لمدة '+num(room.minutes)+' دقيقة')}<div class="stack">${pair(false)}
+  ${invitePanel()}
   <section class="panel"><h2>ميثاق الجلسة</h2><p class="bodycopy">أتعهد بالبقاء حاضرًا والتركيز على هدفي. تمنح المنصة كل طرف ${num(rewards.achievement)} نقطة إنجاز عند الإتمام. عند الانسحاب تُحرق حتى ٢٠ نقطة من رصيد المنسحب، وتمنح المنصة شريكه ${num(rewards.steadfast)} نقطة صمود.</p></section>
   ${me?.ready?'<p class="tag">وافقت على الميثاق. بانتظار شريكك.</p>':button('ready','أوافق وأنا مستعد','primary','lock-keyhole')}
   ${button('leaveLobby','مغادرة الغرفة','plain','log-out')}</div></div>`;
@@ -447,13 +448,6 @@ async function purchase(item, quantity, skip=false) {
 }
 dialog.addEventListener('submit',event=>{
   const form = event.target;
-  if(form.id==='partner-direct-invite-form'){
-    event.preventDefault();
-    const handle=new FormData(form).get('handle');
-    if(dialog.open)dialog.close();
-    emit('directInvite',{handle});
-    return;
-  }
   if (form.id!=='confirm-purchase-form') return;
   event.preventDefault();
   const skip = new FormData(form).has('skip');
@@ -862,15 +856,12 @@ function showSessionCelebration(){
   document.body.append(overlay);
   tg?.HapticFeedback?.notificationOccurred?.('success');
 }
-function openInviteOptions(){
-  if(!room||room.phase!=='lobby'||room.members.length!==1)return;
-  if(dialog.open)dialog.close();
-  dialog.innerHTML=`<section class="invite-options-dialog stack"><div class="appearance-head"><div><small>إضافة الشريك</small><h2>كيف تريد دعوته؟</h2></div>${button('close','إغلاق','plain','x')}</div>
-    ${tg?.initData?`<button type="button" class="invite-method primary" data-action="invite">${icon('send')}<span><strong>اختيار شخص من تليجرام</strong><small>اختر المحادثة وسنرسل زر انضمام جاهزًا</small></span></button>`:''}
-    ${tg?.initData?`<form id="partner-direct-invite-form" class="invite-method-form"><label class="field">إضافة بالمعرف<input name="handle" dir="ltr" placeholder="@username" maxlength="33" required></label><button class="secondary">${icon('user-round-plus')} إرسال داخل ميثاق</button></form>`:''}
-    <div class="invite-code-card"><span>${icon('hash')} رمز الغرفة</span><strong dir="ltr">${esc(room.code)}</strong>${button('copyCode','نسخ','secondary','copy')}</div>
+function invitePanel(){
+  if(room.members.length===2)return '';
+  return `<section class="panel stack invite-options"><h2>طرق دعوة إضافية</h2><p class="bodycopy">أضف شريكك داخل ميثاق أو شاركه رمز الغرفة.</p>
+    <div class="invite-code"><label>رمز الغرفة<input id="invite-code" dir="ltr" value="${esc(room.code)}" readonly></label>${button('copyCode','نسخ الرمز','secondary','copy')}</div>
+    ${tg?.initData?`<form id="direct-invite-form" class="join-code"><label class="field">إضافة بالمعرف<input name="handle" dir="ltr" placeholder="@username" maxlength="33" required></label><button class="secondary">${icon('user-round-plus')} إضافة</button></form>`:''}
     <p class="bodycopy invite-reward-note">${icon('gift')} عند إتمام صديقك أول جلسة، تحصلان على ${num(referralPoints)} نقطة لكل واحد.</p></section>`;
-  dialog.showModal();
 }
 function showCopied(control){
   if(!control)return;
@@ -951,7 +942,6 @@ document.addEventListener('click',event=>{
   } else if(action==='tourPrevious'){tourIndex=Math.max(0,tourIndex-1);showTourStep();}
   else if(action==='tourSkip')endTour(true);
   else if(action==='startTour')startTour();
-  else if(action==='openInviteOptions')openInviteOptions();
   else if(action==='closeCelebration')document.querySelector('.session-celebration')?.remove();
   else if (action==='duration') {
     if (!durationAllowed(+value)) return premiumDuration(+value);
@@ -1091,9 +1081,10 @@ page.addEventListener('submit',event=>{
     }
     return;
   }
-  if (event.target.id==='join-code-form') {
+  if (event.target.id==='direct-invite-form' || event.target.id==='join-code-form') {
     event.preventDefault();
     const form = new FormData(event.target);
+    if(event.target.id==='direct-invite-form'){emit('directInvite',{handle:form.get('handle')});return;}
     const code=form.get('code').trim().toUpperCase();
     if (!/^[A-F0-9]{8}$/.test(code)) return toast('اكتب رمز الغرفة المكوّن من ٨ حروف وأرقام.');
     invite=code;inviteDismissed=false;emit('join',{code,goal:''});
@@ -1162,7 +1153,6 @@ socket.on('room', next=>{
   if (invite && !inviteDismissed && next?.phase==='outcome' && next.id!==invite) return;
   const previous=room;
   room=next;
-  if(next?.members?.length===2&&dialog.querySelector('.invite-options-dialog'))dialog.close();
   if (next) clockOffset=next.now-Date.now();
   if (previous?.id!==next?.id) { revisited=false; tab='home'; if (next) inviteDismissed=true; }
   if (previous?.phase!=='active' && next?.phase==='active') {
