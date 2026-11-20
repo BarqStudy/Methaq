@@ -54,6 +54,7 @@ await db.exec(`
   CREATE INDEX IF NOT EXISTS room_pairs_players ON room_pairs(first_player,second_player);
   CREATE TABLE IF NOT EXISTS outcome_views(room TEXT NOT NULL,player TEXT NOT NULL,seen_at BIGINT NOT NULL,PRIMARY KEY(room,player));
 `);
+try{await db.exec('ALTER TABLE players ADD COLUMN tour_seen INTEGER NOT NULL DEFAULT 0');}catch(error){if(!/duplicate|already exists/i.test(error.message))throw error;}
 const app = express();
 export const http = createServer(app);
 const io = new Server(http, { pingInterval:4000, pingTimeout:4000 });
@@ -162,7 +163,7 @@ async function profile(id, includeAnalytics=true) {
     appearance.transparency = glassRange.defaultValue;
   }
   if (equipped.title && equipped.frame) delete equipped.frame;
-  return { ...player, streak, inventory, equipped, plan, cosmetics, appearance, now:clock.now(),
+  return { ...player, tourSeen:Boolean(player.tour_seen), streak, inventory, equipped, plan, cosmetics, appearance, now:clock.now(),
     admin:admins.has(id), adminAccess:adminAccess(id), prices:billingEnabled && !id.startsWith('guest:') ? paidPrices : {},
     referralBonus:Number(referral.referrals)*referralPoints,
     ...(analysis||{}), pointGrants:pointExpiry.map(row=>({amount:Number(row.remaining),expiresAt:Number(row.expires_at)})),pointExpiry:pointExpiry[0]?.expires_at?Number(pointExpiry[0].expires_at):null,completed:Number(stats.completed),minutes:Number(stats.minutes),left:Number(stats.left),
@@ -484,6 +485,7 @@ io.on('connection', async(socket) => {
     await syncProfile();
     if (current()) await send(current());
   });
+  action('completeTour',async()=>{await run('UPDATE players SET tour_seen=1 WHERE id=?',id);});
   action('appearance', async({mode,palette,transparency}) => {
     if (!['dark','light'].includes(mode) || !Object.hasOwn(palettes,palette)) fail('المظهر غير متاح.');
     if (palettes[palette].premium && !await isPaid(id)) fail('هذا اللون متاح مع برو وسبيشل.');

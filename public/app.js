@@ -105,11 +105,16 @@ function startTour(){
 }
 function endTour(save=true){
   document.querySelector('.tour-layer')?.remove();tourIndex=-1;clearTimeout(tourPositionTimer);
-  if(save)try{localStorage.setItem(tourStorageKey(),'done');}catch{/* Private mode. */}
+  if(save){
+    if(profile)profile.tourSeen=true;
+    try{localStorage.setItem(tourStorageKey(),'done');}catch{/* Private mode. */}
+    if(socket?.connected)socket.emit('completeTour',{},()=>{});
+  }
 }
 function maybeStartTour(){
-  let completed=false;try{completed=localStorage.getItem(tourStorageKey())==='done';}catch{/* Private mode. */}
-  if(!completed&&!room&&!blocked)setTimeout(()=>!room&&tourIndex<0&&startTour(),700);
+  let completed=Boolean(profile?.tourSeen);try{completed ||= localStorage.getItem(tourStorageKey())==='done';}catch{/* Private mode. */}
+  const mobile=matchMedia('(max-width:720px)').matches;
+  if(mobile&&!completed&&!room&&!blocked)setTimeout(()=>!room&&tourIndex<0&&startTour(),700);
 }
 addEventListener('resize',()=>tourIndex>=0&&positionTour());
 addEventListener('scroll',()=>tourIndex>=0&&requestAnimationFrame(positionTour),{passive:true});
@@ -1108,7 +1113,7 @@ function updateProfile(data) {
   const changed = profile?.appearance?.mode !== data.appearance?.mode || profile?.appearance?.palette !== data.appearance?.palette || profile?.plan?.tier !== data.plan?.tier || profile?.adminAccess !== data.adminAccess || JSON.stringify(profile?.appearance?.custom) !== JSON.stringify(data.appearance?.custom);
   profile = data;
   if(user?.id){
-    const cached={points:data.points,pointGrants:data.pointGrants,pointExpiry:data.pointExpiry,streak:data.streak,inventory:data.inventory,equipped:data.equipped,plan:data.plan,cosmetics:data.cosmetics,appearance:data.appearance,reliability:data.reliability,completed:data.completed,minutes:data.minutes,left:data.left,now:data.now};
+    const cached={points:data.points,pointGrants:data.pointGrants,pointExpiry:data.pointExpiry,streak:data.streak,inventory:data.inventory,equipped:data.equipped,plan:data.plan,cosmetics:data.cosmetics,appearance:data.appearance,reliability:data.reliability,completed:data.completed,minutes:data.minutes,left:data.left,tourSeen:data.tourSeen,now:data.now};
     try{localStorage.setItem('methaq.profile.'+user.id,JSON.stringify(cached));}catch{/* Storage can be unavailable in private mode. */}
   }
   clearTimeout(expiryTimer);

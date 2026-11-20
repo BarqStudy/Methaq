@@ -33,6 +33,10 @@ test('two-person pact synchronizes and settles rewards, purchases, and withdrawa
     socket.on(event,listener);
   });
   const a = await guest('أحمد');
+  assert.deepEqual(await command(a,'completeTour'),{ok:true});
+  const tourProfile=waitFor(a,'profile',profile=>profile.tourSeen===true);
+  assert.deepEqual(await command(a,'refreshProfile'),{ok:true});
+  assert.equal((await tourProfile).tourSeen,true);
   assert.ok((await command(a,'appearance',{mode:'dark',palette:'aurora'})).error);
   assert.ok((await command(a,'appearance',{mode:'light',palette:'blue',transparency:40})).error);
   const appearance = waitFor(a,'profile',r=>r.appearance.palette==='blue');
