@@ -130,7 +130,7 @@ function emit(event,payload={}) {
     else if (event==='redeemCode') toast('تم تفعيل عضويتك.');
     else if (event==='startTrial') toast('بدأت تجربة برو المجانية لمدة 3 أيام.');
     else if (event==='resetAppearance') toast('عاد المظهر إلى الإعداد الافتراضي.');
-    else if (event==='claimReferral') toast('تم تسجيل دعوة صديقك.');
+    else if (event==='claimReferral') toast('تمت إضافة 100 نقطة لك ولصديقك.');
   });
 }
 function avatar(person) {
@@ -315,7 +315,7 @@ function referralCard(p) {
   const {code,invited=0,rewarded=0,linked} = p.referrals || {};
   const link = code && telegramInviteUrl({bot,shortName,code});
   return `<section class="panel referral-card">
-    <div class="stats-section-head"><span class="stats-icon">${icon('gift')}</span><div><h2>دعوة الأصدقاء</h2><p>${num(referralPoints)} نقطة لك ولصديقك بعد أول جلسة مكتملة له.</p></div></div>
+    <div class="stats-section-head"><span class="stats-icon">${icon('gift')}</span><div><h2>دعوة الأصدقاء</h2><p>${num(referralPoints)} نقطة لك ولصديقك فور تفعيل الكود · بحد أقصى 3 أصدقاء يوميًا.</p></div></div>
     ${code?`<div class="referral-code"><div><label for="my-referral-code">كودك الشخصي</label><input id="my-referral-code" dir="ltr" value="${esc(code)}" readonly></div>${button('copyReferralCode','نسخ الكود','secondary','copy')}</div>
       ${link?`<div class="actions referral-links">${button('shareReferral','شارك رابط الدعوة','primary','send')}${button('copyReferralLink','نسخ الرابط','plain','link-2')}</div>`:''}`:'<p class="bodycopy">افتح ميثاق من تليجرام للحصول على كودك.</p>'}
     <div class="referral-counts">
@@ -853,7 +853,7 @@ function invitePanel(){
   return `<section class="panel stack invite-options"><h2>طرق دعوة إضافية</h2><p class="bodycopy">أضف شريكك داخل ميثاق أو شاركه رمز الغرفة.</p>
     <div class="invite-code"><label>رمز الغرفة<input id="invite-code" dir="ltr" value="${esc(room.code)}" readonly></label>${button('copyCode','نسخ الرمز','secondary','copy')}</div>
     ${tg?.initData?`<form id="direct-invite-form" class="join-code"><label class="field">إضافة بالمعرف<input name="handle" dir="ltr" placeholder="@username" maxlength="33" required></label><button class="secondary">${icon('user-round-plus')} إضافة</button></form>`:''}
-    <p class="bodycopy invite-reward-note">${icon('gift')} عند إتمام صديقك أول جلسة، تحصلان على ${num(referralPoints)} نقطة لكل واحد.</p></section>`;
+    <p class="bodycopy invite-reward-note">${icon('gift')} بمجرد انضمام صديقك، تحصلان على ${num(referralPoints)} نقطة لكل واحد.</p></section>`;
 }
 function showCopied(control){
   if(!control)return;

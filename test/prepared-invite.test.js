@@ -48,7 +48,10 @@ test('runs Telegram invitations, admin changes, custom appearance, and referral 
   assert.equal((await acceptedReferral)[0].referrals.invited,1);
   const guestProfile = once(recipient,'profile');
   await command(recipient,'refreshProfile');
-  assert.equal((await guestProfile)[0].adminAccess,'different-account');
+  const [guestDetails] = await guestProfile;
+  assert.equal(guestDetails.adminAccess,'different-account');
+  assert.equal(guestDetails.points,100);
+  assert.ok((await command(recipient,'claimReferral',{code:referral})).error);
   const students = await command(host,'adminList',{search:'@student_102'});
   assert.equal(students.students[0].id,'102');
   assert.ok((await command(recipient,'adminPoints',{student:'102',points:99})).error);
@@ -68,13 +71,13 @@ test('runs Telegram invitations, admin changes, custom appearance, and referral 
   assert.deepEqual(await command(recipient,'equip',{item:'medic'}),{ok:true});
   const points = once(recipient,'profile');
   assert.deepEqual(await command(host,'adminPoints',{student:'102',points:50}),{ok:true});
-  assert.equal((await points)[0].points,50);
+  assert.equal((await points)[0].points,150);
   const temporary = once(recipient,'profile');
   assert.deepEqual(await command(host,'adminPoints',{student:'102',points:100,validDays:7}),{ok:true});
-  assert.equal((await temporary)[0].points,150);
+  assert.equal((await temporary)[0].points,250);
   const removedPoints = once(recipient,'profile');
   assert.deepEqual(await command(host,'adminRemovePoints',{student:'102',points:100}),{ok:true,removed:100});
-  assert.equal((await removedPoints)[0].points,50);
+  assert.equal((await removedPoints)[0].points,150);
   const revoked = once(recipient,'profile');
   assert.deepEqual(await command(host,'adminRevoke',{student:'102'}),{ok:true});
   const [free] = await revoked;
@@ -83,7 +86,7 @@ test('runs Telegram invitations, admin changes, custom appearance, and referral 
   assert.equal(free.equipped.decoration,undefined);
   const seedPoints=once(host,'profile');
   assert.deepEqual(await command(host,'adminPoints',{student:'101',points:15}),{ok:true});
-  assert.equal((await seedPoints)[0].points,15);
+  assert.equal((await seedPoints)[0].points,115);
   const created = once(host,'room');
   assert.deepEqual(await command(host,'create',{minutes:25,goal:'مراجعة الدرس'}),{ok:true});
   const [room] = await created;

@@ -32,7 +32,7 @@ const dev = process.env.NODE_ENV !== 'production' &&
 const db=await createDatabase();
 await db.exec(`
   CREATE TABLE IF NOT EXISTS referrals (
-    invitee TEXT PRIMARY KEY, inviter TEXT NOT NULL, rewarded_room TEXT
+    invitee TEXT PRIMARY KEY, inviter TEXT NOT NULL, rewarded_room TEXT, created_at BIGINT NOT NULL DEFAULT 0
   );
   CREATE INDEX IF NOT EXISTS referrals_inviter ON referrals(inviter);
   CREATE TABLE IF NOT EXISTS referral_codes(player TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE);
@@ -56,6 +56,7 @@ await db.exec(`
   CREATE TABLE IF NOT EXISTS pending_direct_invites(recipient TEXT PRIMARY KEY,room TEXT NOT NULL,sender TEXT NOT NULL,minutes INTEGER NOT NULL,created_at BIGINT NOT NULL);
 `);
 try{await db.exec('ALTER TABLE players ADD COLUMN tour_seen INTEGER NOT NULL DEFAULT 0');}catch(error){if(!/duplicate|already exists/i.test(error.message))throw error;}
+try{await db.exec('ALTER TABLE referrals ADD COLUMN created_at BIGINT NOT NULL DEFAULT 0');}catch(error){if(!/duplicate|already exists/i.test(error.message))throw error;}
 const app = express();
 export const http = createServer(app);
 const io = new Server(http, { pingInterval:4000, pingTimeout:4000 });
@@ -111,6 +112,20 @@ async function updatePlayer(id) {
 async function canRefer(id, inviter) {
   return id!==inviter && telegramIdPattern.test(id) && telegramIdPattern.test(inviter) &&
     !await query("SELECT 1 FROM results WHERE player=? AND status='success' LIMIT 1",id);
+}
+async function attachAndRewardReferral(invitee,inviter){
+  if(!await canRefer(invitee,inviter))return false;
+  return transaction(async()=>{
+    const now=clock.now();
+    const saudiOffset=3*60*60*1000;
+    const dayStart=now-((now+saudiOffset)%86400000);
+    const used=Number((await query('SELECT count(*) AS total FROM referrals WHERE inviter=? AND created_at>=?',inviter,dayStart))?.total||0);
+    if(used>=3)return 'daily-limit';
+    const attached=await run("INSERT INTO referrals(invitee,inviter,rewarded_room,created_at) VALUES(?,?,?,?) ON CONFLICT(invitee) DO NOTHING",invitee,inviter,'JOINED',now);
+    if(!attached.changes)return false;
+    await run('UPDATE players SET points=points+? WHERE id IN (?,?)',referralPoints,invitee,inviter);
+    return true;
+  });
 }
 
 async function referralCode(id) {
@@ -213,7 +228,6 @@ async function send(room) {
 async function finish(room, leaving) {
   if (room.phase !== 'active') return;
   const now = clock.now();
-  const rewarded = new Set();
   await transaction(async() => {
     for (const p of room.members) {
       const current = await profile(p.id,false);
@@ -225,14 +239,6 @@ async function finish(room, leaving) {
       await run('UPDATE players SET points=points+?, streak=?, last_day=? WHERE id=?', reward, streak, status === 'success' ? today : current.last_day, p.id);
       const date = new Date(now).toISOString().replace('T',' ').slice(0,19);
       await run('INSERT INTO results(room,player,status,reward,minutes,old_streak,date) VALUES(?,?,?,?,?,?,?) ON CONFLICT(room,player) DO NOTHING',room.id,p.id,status,reward,room.minutes,current.streak,date);
-      if (status==='success' && current.completed===0) {
-        const referral = await query('SELECT inviter FROM referrals WHERE invitee=? AND rewarded_room IS NULL',p.id);
-        if (referral) {
-          await run('UPDATE referrals SET rewarded_room=? WHERE invitee=?',room.id,p.id);
-          await run('UPDATE players SET points=points+? WHERE id IN (?,?)',referralPoints,p.id,referral.inviter);
-          rewarded.add(referral.inviter);
-        }
-      }
     }
   });
   room.phase = 'outcome';
@@ -240,7 +246,7 @@ async function finish(room, leaving) {
   room.finished = now;
   delete room.breakUntil;
   await saveRoom(room,true);
-  await Promise.all([...new Set([...room.members.map(p=>p.id),...rewarded])].map(async player=>io.to('player:'+player).emit('profile',await profile(player))));
+  await Promise.all(room.members.map(async player=>io.to('player:'+player.id).emit('profile',await profile(player.id))));
   await send(room);
   for(const member of room.members){if(io.sockets.adapter.rooms.get('player:'+member.id)?.size)await run('INSERT INTO outcome_views(room,player,seen_at) VALUES(?,?,?) ON CONFLICT(room,player) DO NOTHING',room.id,member.id,clock.now());}
 }
@@ -475,10 +481,11 @@ io.on('connection', async(socket) => {
     if (!inviter || await isBanned(inviter)) fail('كود الدعوة غير متاح.');
     if (id===inviter) fail('استخدم كود صديقك.');
     const linked = await query('SELECT inviter FROM referrals WHERE invitee=?',id);
-    if (linked?.inviter===inviter) return syncProfile();
-    if (linked) fail('هذا الحساب مرتبط بدعوة سابقة.');
+    if (linked) fail('يمكن لكل حساب تفعيل كود دعوة واحد فقط.');
     if (!await canRefer(id,inviter)) fail('أدخل كود الدعوة قبل إكمال جلستك الأولى.');
-    await run('INSERT INTO referrals(invitee,inviter) VALUES(?,?)',id,inviter);
+    const attached=await attachAndRewardReferral(id,inviter);
+    if(attached==='daily-limit')fail('وصل هذا الكود إلى الحد اليومي: 3 استخدامات. جرّب غدًا.');
+    if(attached!==true)fail('تعذر تفعيل كود الدعوة. حاول مرة أخرى.');
     await syncProfile();
     io.to('player:'+inviter).emit('profile',await profile(inviter));
   });
@@ -581,10 +588,7 @@ io.on('connection', async(socket) => {
     if (!room || room.phase !== 'lobby' || room.members.length >= 2) fail('الغرفة ممتلئة أو انتهت صلاحية الدعوة.');
     const inviter = room.members[0].id;
     await enter(room,goalText(goal));
-    if (await canRefer(id,inviter)) {
-      const attached = await run('INSERT INTO referrals(invitee,inviter) VALUES(?,?) ON CONFLICT(invitee) DO NOTHING',id,inviter);
-      if (attached.changes) { await syncProfile(); io.to('player:'+inviter).emit('profile',await profile(inviter)); }
-    }
+    if(await attachAndRewardReferral(id,inviter)===true){await syncProfile();io.to('player:'+inviter).emit('profile',await profile(inviter));}
   });
   let nextDirectInvite = 0;
   action('directInvite', async({handle}) => {
