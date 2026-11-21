@@ -379,7 +379,7 @@ function store() {
 function inventoryPage(){
   const owned=Object.entries(items).filter(([key,[group]])=>(group===2?Boolean(profile?.cosmetics?.[key]):(profile?.inventory?.[key]||0)>0)||Object.values(profile?.equipped||{}).includes(key));
   return `<div class="inner store-page">${heading('المخزون','كل مشترياتك وعناصرك في مكان واحد.')}
-    ${owned.length?`<div class="store-grid inventory-grid">${owned.map(([key,[group,label,,symbol,desc]])=>{const count=profile?.inventory?.[key]||0;const equipped=Object.values(profile?.equipped||{}).includes(key);const expiry=profile?.cosmetics?.[key];return `<article class="panel inventory-item"><div class="inventory-visual" style="--art:${storeArt[key]}"><span class="art-orbit"></span>${icon(symbol)}${icon('sparkles')}</div><div class="inventory-copy"><h3>${label}</h3><p class="bodycopy">${desc}</p><span class="tag">${equipped?'مفعّل':expiry?'متاح حتى '+new Date(expiry).toLocaleDateString('ar-SA'):num(count)+' في المخزون'}</span></div>${[1,2,4,5].includes(group)?button('equip',equipped?'إلغاء التفعيل':'استخدم','secondary','power',key):button('useInventory','استخدم قطعة واحدة','primary','play',key)}</article>`;}).join('')}</div>`:'<section class="panel empty-state">'+icon('package-open')+'<h2>مخزونك فارغ</h2><p class="bodycopy">ستظهر هنا العناصر التي تشتريها من المتجر.</p></section>'}</div>`;
+    ${owned.length?`<div class="store-grid inventory-grid">${owned.map(([key,[group,label,,symbol,desc]])=>{const count=profile?.inventory?.[key]||0;const equipped=Object.values(profile?.equipped||{}).includes(key);const expiry=profile?.cosmetics?.[key];return `<article class="panel inventory-item"><div class="inventory-visual" style="--art:${storeArt[key]}"><span class="product-icon-3d">${icon(symbol)}${icon(symbol)}</span></div><div class="inventory-copy"><h3>${label}</h3><p class="bodycopy">${desc}</p><span class="tag">${equipped?'مفعّل':expiry?'متاح حتى '+new Date(expiry).toLocaleDateString('ar-SA'):num(count)+' في المخزون'}</span></div>${[1,2,4,5].includes(group)?button('equip',equipped?'إلغاء التفعيل':'استخدم','secondary','power',key):button('useInventory','استخدم قطعة واحدة','primary','play',key)}</article>`;}).join('')}</div>`:'<section class="panel empty-state">'+icon('package-open')+'<h2>مخزونك فارغ</h2><p class="bodycopy">ستظهر هنا العناصر التي تشتريها من المتجر.</p></section>'}</div>`;
 }
 function themes() {
   const current = specialties[profile?.equipped?.decoration];
@@ -404,7 +404,7 @@ function shopItems(groupIndex) {
     const detail = specialLocked?'حصري لعضوية سبيشل':included ? 'مشمول في العضوية' : group===2 && expires
       ? 'متاح حتى '+new Date(expires).toLocaleDateString('ar') : num(cost)+' نقطة'+(group===2?' · صالح ٣ أيام':count?' · في المخزون '+num(count):'');
     return `<article class="panel store-item">
-      <div class="store-art art-${key}" style="--art:${storeArt[key]}"><span aria-hidden="true" class="art-orbit"></span>${icon(symbol)}${icon('sparkles')}</div>
+      <div class="store-art art-${key}" style="--art:${storeArt[key]}"><span class="product-icon-3d">${icon(symbol)}${icon(symbol)}</span></div>
       <h3>${label}</h3><p class="bodycopy">${desc}</p><span class="gold">${detail}</span>
       <div class="store-controls">${specialLocked?button('seePlans','عرض سبيشل','secondary','gem'):available?button('equip',equipped?'إلغاء التفعيل':'تفعيل',equipped?'primary':'secondary','',key):`
         <form class="buy-form" data-item="${key}">
