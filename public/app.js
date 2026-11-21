@@ -43,7 +43,8 @@ const esc = (v) => String(v ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;
 const num = (v) => Number(v || 0).toLocaleString('ar',{numberingSystem:'arab'});
 const remainingTime=(value,now=Date.now())=>{const minutes=Math.max(0,Math.ceil((value-now)/60000));const days=Math.floor(minutes/1440);const hours=Math.floor((minutes%1440)/60);const rest=minutes%60;return [days&&num(days)+' يوم',hours&&num(hours)+' ساعة',!days&&!hours&&num(rest)+' دقيقة'].filter(Boolean).join(' و ');};
 let room, socket, user, profile, bot, shortName, clockOffset = 0, chosen = 5, tab = invite?'rooms':'home', category = 0, goal = '', pact = '', inviteDismissed = false;
-let viewKey, noticeTimeout, revisited, audio, ambience;
+let viewKey, noticeTimeout, revisited;
+const ambience=new Set(),ambientAudio=new Map();
 let preparingInvite = false, incomingInvite;
 let appearanceOpen = false, checkoutOpen = false, expiryTimer, glassPreview, glassRequest = 0;
 const isPaid = () => ['pro','special'].includes(profile?.plan?.tier);
@@ -246,7 +247,7 @@ function active() {
   <section class="panel preview active-dial" ${decorationStyle()}>${decorationIcon()}${dial('00:00','الوقت المتبقي')}</section>${pair(true)}
   ${request ? '<section class="panel actions">'+(request.id===user.id?'بانتظار موافقة شريكك على الاستراحة.':'شريكك يطلب استراحة لمدة ٣ دقائق. '+button('answerPause','أوافق','primary','','yes')+button('answerPause','متابعة الجلسة','secondary','','no'))+'</section>':''}
   <section class="panel focus-tools stack">
-    <div class="tool-section sound-section"><div class="tool-heading">${icon('volume-2')}<div><h3>أجواء وأصوات</h3><p>تسجيلات محيطية ناعمة تساعدك على التركيز</p></div></div><div class="sound-grid" aria-label="أصوات الخلفية">${[['rain','مطر هادئ','cloud-rain'],['cafe','مقهى خافت','coffee'],['forest','غابة هادئة','trees'],['fire','مدفأة هادئة','flame']].map(([k,v,symbol])=>button('sound',v,ambience===k?'primary sound-choice active':'secondary sound-choice',symbol,k)).join('')}</div></div>
+    <div class="tool-section sound-section"><div class="tool-heading">${icon('volume-2')}<div><h3>أجواء وأصوات</h3><p>شغّل أكثر من صوت واصنع أجواءك الخاصة</p></div></div>${roomSoundControls(inventory)}</div>
     ${(inventory.zap||inventory.coffee||inventory.pause||(isPaid()&&!room.premiumPauseUsed))?`<div class="tool-section gift-section"><div class="tool-heading">${icon('gift')}<div><h3>تفاعل مع شريكك</h3><p>لفتة صغيرة تصل إليه فورًا</p></div></div><div class="gift-grid">${inventory.zap?button('signal','صعقة التركيز','secondary gift-action','zap','zap'):''}${inventory.coffee?button('signal','إهداء قهوة','secondary gift-action','coffee','coffee'):''}${inventory.pause||(isPaid()&&!room.premiumPauseUsed)?button('requestPause','استراحة محارب','secondary gift-action','timer-reset'):''}</div></div>`:''}
     <div class="withdraw-section"><div><strong>إنهاء الجلسة</strong><small>سيُسجّل الانسحاب في حسابك</small></div>${button('withdraw','انسحاب','danger withdraw-action','log-out')}</div>
   </section></div></div>`;
@@ -813,14 +814,22 @@ const vibe = () => {
   if (tg?.initData) tg.HapticFeedback?.impactOccurred('medium');
   else navigator.vibrate?.(120);
 };
+function roomSoundControls(inventory={}){
+  const options=[['rain','مطر هادئ','cloud-rain'],['cafe','مقهى خافت','coffee'],['forest','غابة هادئة','trees'],['fire','مدفأة هادئة','flame']]
+    .filter(([key])=>isPaid()||inventory[key]||profile?.equipped?.theme===key);
+  if(!options.length)return `<p class="bodycopy sound-empty">فعّل أحد منتجات الأجواء والأصوات من المتجر ليظهر هنا.</p>`;
+  return `<div class="sound-grid" aria-label="أصوات الخلفية">${options.map(([key,label,symbol])=>button('sound',label,ambience.has(key)?'primary sound-choice active':'secondary sound-choice',symbol,key)).join('')}</div><small class="sound-mix-note">${icon('audio-lines')} يمكنك تشغيل عدة أصوات معًا</small>`;
+}
 function sound(type, toggle=true) {
-  if (audio) { audio.close(); audio = null; }
-  if (toggle && ambience===type) { ambience=null; return render(true); }
+  if(ambience.has(type)){
+    if(!toggle)return;
+    ambientAudio.get(type)?.close();ambientAudio.delete(type);ambience.delete(type);return render(true);
+  }
   const Context = window.AudioContext || window.webkitAudioContext;
   if (!Context) return toast('الصوت غير مدعوم في هذا المتصفح.');
-  audio = new Context();
-  const seconds=12,rate=audio.sampleRate;
-  const buffer=audio.createBuffer(2,rate*seconds,rate);
+  const context=new Context();
+  const seconds=12,rate=context.sampleRate;
+  const buffer=context.createBuffer(2,rate*seconds,rate);
   for(let channel=0;channel<2;channel++){
     const samples=buffer.getChannelData(channel);
     let brown=0,smooth=0,previousRaw=0,drop=0,crackle=0;
@@ -851,25 +860,25 @@ function sound(type, toggle=true) {
       samples[i]=Math.max(-.72,Math.min(.72,value));
     }
   }
-  const source = audio.createBufferSource();
+  const source=context.createBufferSource();
   source.buffer = buffer;
   source.loop=true;
-  const filter=audio.createBiquadFilter();
+  const filter=context.createBiquadFilter();
   filter.type='lowpass';
   filter.frequency.value=type==='rain'?5200:type==='fire'?2800:2200;
   filter.Q.value=.18;
-  const compressor=audio.createDynamicsCompressor();
+  const compressor=context.createDynamicsCompressor();
   compressor.threshold.value=-28;compressor.knee.value=20;compressor.ratio.value=3;compressor.attack.value=.08;compressor.release.value=.7;
-  const gain = audio.createGain();
+  const gain=context.createGain();
   gain.gain.value=0;
-  gain.gain.linearRampToValueAtTime(type==='rain'?.16:.19,audio.currentTime+1.2);
-  source.connect(filter).connect(compressor).connect(gain).connect(audio.destination);
+  gain.gain.linearRampToValueAtTime(type==='rain'?.12:.14,context.currentTime+1.2);
+  source.connect(filter).connect(compressor).connect(gain).connect(context.destination);
   source.start();
-  audio.resume().catch(()=>toast('تعذر تشغيل الصوت.'));
-  ambience = type;
+  context.resume().catch(()=>toast('تعذر تشغيل الصوت.'));
+  ambientAudio.set(type,context);ambience.add(type);
   render(true);
 }
-function stopSound() { if (audio) audio.close(); audio=null; ambience=null; }
+function stopSound(){for(const context of ambientAudio.values())context.close();ambientAudio.clear();ambience.clear();}
 function showGiftMoment(data={}) {
   const labels={coffee:['coffee','كوب قهوة'],zap:['zap','صعقة تركيز'],horn:['sparkles','بوق الفوز']};
   const [symbol,label]=labels[data.item]||['gift','هدية'];
