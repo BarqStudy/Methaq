@@ -129,6 +129,7 @@ function emit(event,payload={}) {
     else if (event==='directInvite') toast('أُرسلت الدعوة داخل ميثاق.');
     else if (event==='redeemCode') toast('تم تفعيل عضويتك.');
     else if (event==='startTrial') toast('بدأت تجربة برو المجانية لمدة ٣ أيام.');
+    else if (event==='resetAppearance') toast('عاد المظهر إلى الإعداد الافتراضي.');
     else if (event==='claimReferral') toast('تم تسجيل دعوة صديقك.');
   });
 }
@@ -373,9 +374,13 @@ function redeemCodeCard(){return `<form id="redeem-code-form" class="panel join-
     <button class="secondary">${icon('ticket-check')} فعّل الكود</button>
   </form>`;}
 function plansPage(){return `<div class="inner store-page">${heading('الاشتراكات','مزايا أكثر لجلسات تركيز أهدأ وأطول.')}${redeemCodeCard()}${memberships()}</div>`;}
+function pointsWallet(){
+  const total=Number(profile?.points||0);
+  const temporary=(profile?.pointGrants||[]).reduce((sum,grant)=>sum+Number(grant.amount||0),0);
+  return `<section class="panel points-wallet"><div class="wallet-main"><span class="wallet-icon">${icon('sparkles')}</span><div><small>رصيدك الحالي</small><strong>${num(total)}</strong><span>نقطة</span></div></div><div class="wallet-details"><div><small>رصيد دائم</small><strong>${num(Math.max(0,total-temporary))}</strong></div>${temporary?`<div class="temporary-balance" data-point-expiry="${profile.pointExpiry}"><small>نقاط مؤقتة</small><strong>+${num(temporary)}</strong><span>تنتهي خلال <b>${remainingTime(profile.pointExpiry,serverNow())}</b></span></div>`:`<div><small>النقاط المؤقتة</small><strong>—</strong><span>لا يوجد رصيد منتهٍ</span></div>`}</div></section>`;
+}
 function store() {
-  const p = profile;
-  return `<div class="inner store-page">${heading('متجر ميثاق','رصيدك الحالي '+num(p?.points)+' نقطة')}
+  return `<div class="inner store-page">${heading('متجر ميثاق','استخدم نقاطك لتخصيص تجربتك.')}${pointsWallet()}
   <section class="panel store-theme-entry"><span class="tile-icon">${icon('palette')}</span><div><h2>المظهر والثيمات</h2><p class="bodycopy">الوضع ${profile?.appearance?.mode==='dark'?'الليلي':'النهاري'} · ${palettes[profile?.appearance?.palette || 'emerald'].label}، وثيمات تخصصية كاملة.</p></div>${button('appearanceMenu','تخصيص المظهر','secondary','sliders-horizontal')}</section>
   <div class="filters">${sections.map((label,i)=>button('filter',label,sectionGroups[i]===category?'selected':'','',sectionGroups[i])).join('')}</div>
   ${shopItems(category)}</div>`;
@@ -652,6 +657,7 @@ function openAppearance() {
       <input id="glass-range" type="range" min="${glassRange.min}" max="${glassRange.max}" value="${appearance.transparency}" ${isPaid()?'':'disabled aria-describedby="glass-lock"'}>
       ${isPaid()?'':'<p class="bodycopy" id="glass-lock">تحكّم بالشفافية مع برو وسبيشل.</p>'}
     </section>
+    ${button('resetAppearance','استعادة المظهر الافتراضي','secondary','rotate-ccw')}
     ${button('startTour','إعادة الجولة التعريفية','plain','map')}
     ${!isPaid() && room?.phase!=='active' ? button('seePlans','عرض العضويات','secondary','crown') : ''}
     ${adminAccessDetails()}</div>`;

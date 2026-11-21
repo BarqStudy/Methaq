@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 import { createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Server } from 'socket.io';
 import { Telegraf, Markup } from 'telegraf';
-import { items,glassRange,palettes,plans,rewards,successReward,referralPoints,specialOnly,premiumOnly } from './public/catalog.js';
+import { items,glassRange,defaultAppearance,palettes,plans,rewards,successReward,referralPoints,specialOnly,premiumOnly } from './public/catalog.js';
 import { createMembership,paidPrices } from './membership.js';
 import { roomInviteUrl } from './public/invite.js';
 import { createDatabase } from './database.js';
@@ -499,6 +499,17 @@ io.on('connection', async(socket) => {
     if (palette==='custom' && !await membership.customPalette(id)) fail('احفظ ألوانك المخصصة أولًا.');
     await membership.setAppearance(id,mode,palette,transparency);
     await syncProfile();
+  });
+  action('resetAppearance',async()=>{
+    const row=await query('SELECT equipped FROM players WHERE id=?',id);
+    const equipped=JSON.parse(row?.equipped||'{}');
+    delete equipped.decoration;
+    await transaction(async()=>{
+      await membership.setAppearance(id,defaultAppearance.mode,defaultAppearance.palette,defaultAppearance.transparency);
+      await run('UPDATE players SET equipped=? WHERE id=?',JSON.stringify(equipped),id);
+    });
+    const room=current();const member=room?.members.find(entry=>entry.id===id);if(member)member.equipped={...equipped};
+    await syncProfile();if(room)await send(room);
   });
 
   action('customPalette', async({fill,first,second}) => {
