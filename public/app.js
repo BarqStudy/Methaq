@@ -212,7 +212,7 @@ function home() {
       <p class="preview-note">${icon('users')} يبدأ المؤقت بعد موافقة الطرفين</p>
     </section>
     <section class="duration-picker" aria-label="اختيار سريع للمدة"><div class="duration-picker-head"><span>${icon('clock-3')} اختيار سريع</span><small>بالدقائق</small></div><div class="durations" role="group" aria-label="مدة الجلسة">${durations.map(m=>`<button type="button" class="duration ${m===chosen?'on':''}" data-action="duration" data-value="${m}" aria-pressed="${m===chosen}"><strong>${num(m)}</strong><span>دقيقة</span>${!durationAllowed(m)?icon('lock-keyhole'):''}</button>`).join('')}</div></section>
-    <form class="panel form-main create-room-form" id="create-session-form"><button class="create-room-heading" aria-label="إنشاء غرفة جديدة"><span><strong>إنشاء غرفة</strong><small>اضغط هنا بعد اختيار المدة</small></span><span class="tile-icon">${icon('plus')}</span></button>
+    <form class="panel form-main create-room-form" id="create-session-form"><button class="create-room-heading" aria-label="إنشاء غرفة جديدة"><span class="tile-icon">${icon('plus')}</span><span><strong>إنشاء غرفة</strong><small>اضغط هنا بعد اختيار المدة</small></span></button>
     <label class="field">هدف الجلسة <small class="optional">اختياري</small><input maxlength="160" name="goal" placeholder="ماذا ستنجز في هذه الجلسة؟" value="${esc(goal)}"></label></form></div>`;
 }
 function roomsPage(){
