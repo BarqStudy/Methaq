@@ -420,6 +420,16 @@ body {padding-bottom:calc(88px + var(--dock-bottom))}
 .admin-row {display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:11px 0;border-top:1px solid var(--line)}
 .admin-page select {background:var(--surface);color:var(--text);border:1px solid var(--line);border-radius:11px;padding:7px}
 .admin-page code {font-family:monospace;user-select:all}
+.admin-student{border:1px solid var(--line);border-radius:16px;background:var(--surface);overflow:hidden}
+.admin-student summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 14px;cursor:pointer;list-style:none}
+.admin-student summary::-webkit-details-marker{display:none}
+.admin-student summary>span:first-child{display:grid;gap:2px;min-width:0}
+.admin-student summary small{color:var(--muted);font-size:12px;overflow:hidden;text-overflow:ellipsis}
+.admin-student-status{display:flex;align-items:center;gap:5px;color:var(--muted);font-size:13px;white-space:nowrap}
+.admin-student-status i{transition:transform .2s ease}.admin-student[open] .admin-student-status i{transform:rotate(180deg)}
+.admin-student-details{padding:0 14px 14px;border-top:1px solid var(--line)}
+.admin-student-form{padding-top:12px}.admin-code-row{padding-inline:2px}
+.code-expired{color:var(--danger);font-weight:700}.code-active{color:var(--accent);font-weight:700}
 .upgrade-dialog {padding:7px;border-radius:19px;background:radial-gradient(ellipse at 86% 4%,color-mix(in srgb,var(--gold) 18%,transparent),transparent 62%)}
 .upgrade-dialog h2 {font-size:22px;font-weight:700}
 .upgrade-dialog .art-plain {width:52px;height:52px;box-shadow:0 8px 22px color-mix(in srgb,var(--gold) 20%,transparent)}

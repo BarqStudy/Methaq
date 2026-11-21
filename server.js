@@ -426,6 +426,12 @@ io.on('connection', async(socket) => {
     if (!Object.hasOwn(plans,plan)) fail('اختر باقة صالحة.');
     return {code:await membership.createCode(id,plan)};
   });
+  adminAction('adminDeleteCode',async({code})=>{
+    const normalized=typeof code==='string'?code.trim().toUpperCase():'';
+    if(!/^MTHQ-[A-F0-9]{16}$/.test(normalized))fail('الكود غير صالح.');
+    if(!await membership.deleteCode(normalized))fail('الكود محذوف أو غير موجود.');
+    return {ok:true};
+  });
   action('redeemCode', async({code}) => {
     if (!telegramIdPattern.test(id)) fail('افتح التطبيق من تليجرام لتفعيل الكود.');
     const normalized = typeof code==='string' ? code.trim().toUpperCase() : '';

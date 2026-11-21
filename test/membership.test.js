@@ -21,5 +21,6 @@ test('expires cosmetics and Pro, preserves Special, and records each verified ch
   now+=month;assert.equal((await membership.planStatus('101')).tier,'free');
   const special=await membership.newInvoice('101','special');assert.equal(await membership.fulfill(special,{...payment,amount:250,charge:'lifetime'}),'101');
   now+=100*month;assert.deepEqual(await membership.planStatus('101'),{tier:'special',until:null,trial:false});
+  const singleUse=await membership.createCode('admin','pro');assert.equal(await membership.redeemCode('303',singleUse),true);assert.equal(await membership.redeemCode('404',singleUse),false);assert.equal(await membership.deleteCode(singleUse),true);assert.equal((await membership.codes()).some(entry=>entry.code===singleUse),false);
   assert.equal(await membership.startTrial('202'),true);assert.equal((await membership.planStatus('202')).trial,true);assert.equal(await membership.startTrial('202'),false);await db.close();
 });

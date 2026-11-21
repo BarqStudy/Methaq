@@ -486,9 +486,8 @@ function adminPage() {
       ${students.map(student=>{
         const plan = plans[student.plan.tier];
         const status = student.banned ? 'محظور' : plan?.title || 'مجاني';
-        return `<article class="admin-row"><div><strong>${esc(student.name)}</strong>
-        <p class="bodycopy">${esc(student.handle?'@'+student.handle+' · ':'')}${esc(student.id)} · ${status} · ${num(student.points)} نقطة</p>
-        ${student.temporaryPoints?`<p class="bodycopy">${icon('clock-3')} ${num(student.temporaryPoints)} نقطة مؤقتة · أقرب انتهاء ${new Date(student.temporaryUntil).toLocaleDateString('ar-SA-u-nu-latn')}</p>`:''}</div>
+        return `<details class="admin-student"><summary><span><strong>${esc(student.name)}</strong><small>${esc(student.handle?'@'+student.handle+' · ':'')}${esc(student.id)}</small></span><span class="admin-student-status">${status} · ${num(student.points)} نقطة ${icon('chevron-down')}</span></summary>
+        <div class="admin-student-details">${student.temporaryPoints?`<p class="bodycopy">${icon('clock-3')} ${num(student.temporaryPoints)} نقطة مؤقتة · أقرب انتهاء ${new Date(student.temporaryUntil).toLocaleDateString('ar-SA-u-nu-latn')}</p>`:''}
         <form class="actions admin-student-form" data-student="${esc(student.id)}">
           ${!student.banned && student.plan.tier!=='special'?`<select name="plan" aria-label="الباقة"><option value="pro">برو</option><option value="special">سبيشل</option></select><button class="secondary" value="grant">${icon('circle-check')} فعّل</button>`:''}
           ${plan?button('confirmAdminRevoke','إزالة العضوية','danger','user-round-minus',student.id):''}
@@ -496,13 +495,13 @@ function adminPage() {
           <select name="validDays" aria-label="صلاحية النقاط"><option value="0">دائمة</option><option value="1">يوم واحد</option><option value="3">3 أيام</option><option value="7">أسبوع</option><option value="14">أسبوعان</option><option value="30">شهر</option></select>
           <button class="secondary" value="points">${icon('sparkles')} إضافة</button><button class="danger" value="removePoints">${icon('circle-minus')} إزالة</button>`:''}
           ${!student.admin?`<button class="${student.banned?'secondary':'danger'}" value="${student.banned?'unban':'ban'}">${student.banned?'رفع الحظر':'حظر'}</button>`:''}
-        </form></article>`;
+        </form></div></details>`;
       }).join('') || '<p class="bodycopy">'+(adminData?'لم تظهر حسابات مطابقة.':'جارٍ تحميل الحسابات…')+'</p>'}</section>
     <section class="panel stack"><h2>أكواد العضوية</h2><p class="bodycopy">كل كود يفعّل العضوية لحساب واحد.</p>
       <form id="admin-code-form" class="actions"><label>الباقة <select name="plan"><option value="pro">برو</option><option value="special">سبيشل</option></select></label>
       <button class="primary">${icon('ticket-plus')} أنشئ كودًا</button></form>
-      ${codes.map(entry=>`<div class="admin-row"><div><code dir="ltr">${esc(entry.code)}</code><p class="bodycopy">${plans[entry.plan]?.title} · ${entry.redeemed_by?'مستخدم':'متاح'}</p></div>
-      ${!entry.redeemed_by?button('adminCopy','نسخ الكود','secondary','copy',entry.code):''}</div>`).join('')}</section></div></div>`;
+      ${codes.map(entry=>`<div class="admin-row admin-code-row"><div><code dir="ltr">${esc(entry.code)}</code><p class="bodycopy">${plans[entry.plan]?.title} · <span class="${entry.redeemed_by?'code-expired':'code-active'}">${entry.redeemed_by?'منتهي':'متاح لاستخدام واحد'}</span></p></div>
+      <div class="actions">${!entry.redeemed_by?button('adminCopy','نسخ الكود','secondary','copy',entry.code):''}${button('confirmAdminDeleteCode','حذف','danger','trash-2',entry.code)}</div></div>`).join('')}</section></div></div>`;
 }
 
 let appearanceSnapFrame;
@@ -951,6 +950,8 @@ document.addEventListener('click',event=>{
   }
   else if (action==='confirmAdminRevoke') modal('إزالة العضوية','سيعود الحساب إلى الباقة المجانية.',button('adminRevoke','إزالة العضوية','danger','user-round-minus',value)+button('close','رجوع','secondary'));
   else if (action==='adminRevoke') { dialog.close(); adminRequest('adminRevoke',{student:value}); }
+  else if(action==='confirmAdminDeleteCode')modal('حذف الكود','سيُحذف الكود نهائيًا من لوحة الإدارة.',button('adminDeleteCode','حذف الكود','danger','trash-2',value)+button('close','رجوع','secondary'));
+  else if(action==='adminDeleteCode'){dialog.close();adminRequest('adminDeleteCode',{code:value});}
   else if (action==='adminCopy') {
     navigator.clipboard?.writeText(value).then(()=>toast('نُسخ الكود.'),()=>toast('حدد الكود وانسخه يدويًا.'));
   }
