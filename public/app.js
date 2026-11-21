@@ -379,10 +379,21 @@ function pointsWallet(){
   const temporary=(profile?.pointGrants||[]).reduce((sum,grant)=>sum+Number(grant.amount||0),0);
   return `<section class="panel points-wallet"><div class="wallet-main"><span class="wallet-icon">${icon('sparkles')}</span><div><small>رصيدك الحالي</small><strong>${num(total)}</strong><span>نقطة</span></div></div><div class="wallet-details"><div><small>رصيد دائم</small><strong>${num(Math.max(0,total-temporary))}</strong></div>${temporary?`<div class="temporary-balance" data-point-expiry="${profile.pointExpiry}"><small>نقاط مؤقتة</small><strong>+${num(temporary)}</strong><span>تنتهي خلال <b>${remainingTime(profile.pointExpiry,serverNow())}</b></span></div>`:`<div><small>النقاط المؤقتة</small><strong>—</strong><span>لا يوجد رصيد منتهٍ</span></div>`}</div></section>`;
 }
+function storeSectionIntro(group){
+  const info={
+    0:['shield','الحماية والوقت','أدوات عملية تُستخدم عند الحاجة: تحمي سلسلتك، تعالج انسحابًا سابقًا، أو تمنحك استراحة داخل الجلسة. كل استخدام يستهلك قطعة من مخزونك.','منتجات قابلة للاستهلاك'],
+    2:['badge-check','الألقاب والشارات','تظهر بجانب اسمك وتمنح حسابك هوية مميزة. المشتريات العادية صالحة ٣ أيام، والمشتركون يستخدمون العناصر المشمولة طوال مدة العضوية.','يُفعّل لقب أو إطار واحد'],
+    3:['gift','التفاعلات','هدايا وإشارات ترسلها لشريكك أثناء جلسة التركيز. كل إرسال يستهلك قطعة واحدة، ويمكن شراء أكثر من قطعة مسبقًا.','تُستخدم داخل الجلسة'],
+    4:['palette','الثيمات والتخصصات','تغيّر زخارف وهوية المنصة كاملة حسب تخصصك، وتعمل بشكل مستقل عن لون المنصة والوضع الليلي أو النهاري.','يُفعّل ثيم واحد فقط']
+  }[group];
+  if(!info)return '';
+  return `<section class="section-explainer"><span class="section-explainer-icon">${icon(info[0])}</span><div><h2>${info[1]}</h2><p>${info[2]}</p><small>${icon('circle-check')} ${info[3]}</small></div></section>`;
+}
 function store() {
   return `<div class="inner store-page">${heading('متجر ميثاق','استخدم نقاطك لتخصيص تجربتك.')}${pointsWallet()}
   <section class="panel store-theme-entry"><span class="tile-icon">${icon('palette')}</span><div><h2>المظهر والثيمات</h2><p class="bodycopy">الوضع ${profile?.appearance?.mode==='dark'?'الليلي':'النهاري'} · ${palettes[profile?.appearance?.palette || 'emerald'].label}، وثيمات تخصصية كاملة.</p></div>${button('appearanceMenu','تخصيص المظهر','secondary','sliders-horizontal')}</section>
   <div class="filters">${sections.map((label,i)=>button('filter',label,sectionGroups[i]===category?'selected':'','',sectionGroups[i])).join('')}</div>
+  ${storeSectionIntro(category)}
   ${shopItems(category)}</div>`;
 }
 function inventoryPage(){
