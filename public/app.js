@@ -212,9 +212,8 @@ function home() {
       <p class="preview-note">${icon('users')} يبدأ المؤقت بعد موافقة الطرفين</p>
     </section>
     <section class="duration-picker" aria-label="اختيار سريع للمدة"><div class="duration-picker-head"><span>${icon('clock-3')} اختيار سريع</span><small>بالدقائق</small></div><div class="durations" role="group" aria-label="مدة الجلسة">${durations.map(m=>`<button type="button" class="duration ${m===chosen?'on':''}" data-action="duration" data-value="${m}" aria-pressed="${m===chosen}"><strong>${num(m)}</strong><span>دقيقة</span>${!durationAllowed(m)?icon('lock-keyhole'):''}</button>`).join('')}</div></section>
-    <form class="panel form-main" id="create-session-form"><div class="panel-title"><span class="tile-icon">${icon('plus')}</span><div><h2>إنشاء غرفة</h2></div></div>
-    <label class="field">هدف الجلسة <small class="optional">اختياري</small><input maxlength="160" name="goal" placeholder="ماذا ستنجز في هذه الجلسة؟" value="${esc(goal)}"></label>
-    <button class="primary wide create-room-cta"><span class="create-plus" aria-hidden="true">${icon('plus')}</span><span>ابدأ ميثاقك وأنشئ غرفة</span><small>وادعُ شريكك للتركيز معًا</small></button></form></div>`;
+    <form class="panel form-main create-room-form" id="create-session-form"><button class="create-room-heading" aria-label="إنشاء غرفة جديدة"><span><strong>إنشاء غرفة</strong><small>اضغط هنا بعد اختيار المدة</small></span><span class="tile-icon">${icon('plus')}</span></button>
+    <label class="field">هدف الجلسة <small class="optional">اختياري</small><input maxlength="160" name="goal" placeholder="ماذا ستنجز في هذه الجلسة؟" value="${esc(goal)}"></label></form></div>`;
 }
 function roomsPage(){
   const joining=isInvite();
@@ -601,6 +600,7 @@ async function toggleEquip(item) {
   const previous={...profile.equipped};
   profile.equipped={...profile.equipped,[slot]:profile.equipped[slot]===item?null:item};
   if(category===2&&profile.equipped[slot])delete profile.equipped[slot==='title'?'frame':'title'];
+  if(category===4&&appearanceOpen&&dialog.open)dialog.querySelectorAll('.specialty-choice').forEach(card=>card.setAttribute('aria-pressed',String(card.dataset.value===profile.equipped.decoration)));
   visualUpdatePending=true;
   applyAppearance();render(true);tg?.HapticFeedback?.selectionChanged();
   try{
@@ -614,14 +614,24 @@ function openAppearance() {
   if (dialog.open && !appearanceOpen) return;
   appearanceOpen = true;
   const appearance = profile?.appearance || defaultAppearance;
-  dialog.innerHTML = `<div class="stack"><div class="appearance-head"><h2>مظهر المنصة</h2>${button('close','إغلاق','plain','x')}</div>
-    <section class="appearance-card"><h3>وضع العرض</h3><div class="pair">${Object.entries({light:['نهاري','sun'],dark:['ليلي','moon']}).map(([mode,[label,symbol]])=>
-      `<button type="button" class="mode-option ${mode}" data-action="mode" data-value="${mode}" aria-pressed="${mode===appearance.mode}">${icon(symbol)} ${label}</button>`).join('')}</div></section>
-    <section class="appearance-card"><h3>الألوان</h3><div class="palette-grid">${Object.entries(palettes).filter(([key])=>key!=='custom' || profile?.appearance?.custom).map(([key,palette])=>{
+  const modes={light:['أبيض','sun','#f5f5f2','#ffffff'],dark:['داكن','moon','#111316','#292d33']};
+  const specialtyCards=Object.entries(specialties).map(([key,[label,symbol,first,second]])=>{
+    const selected=profile?.equipped?.decoration===key;
+    const locked=(key==='eternal'&&profile?.plan?.tier!=='special')||(!isPaid());
+    return `<button type="button" class="theme-gallery-card specialty-choice" data-action="${locked?'seePlans':'equip'}" data-value="${key}" aria-pressed="${selected}" style="--theme-a:${first};--theme-b:${second}">
+      <span class="theme-status">${locked?icon('lock-keyhole'):''}</span>
+      <span class="theme-mini specialty-mini">${icon(symbol)}</span><strong>${label}</strong>${locked?'<small>مميّز</small>':''}</button>`;
+  }).join('');
+  dialog.innerHTML = `<div class="stack appearance-gallery"><div class="appearance-head"><div><small>تخصيص المنصة</small><h2>المظهر</h2></div>${button('close','إغلاق','plain','x')}</div>
+    <section class="appearance-card gallery-section"><h3>وضع العرض</h3><div class="theme-gallery-grid">${Object.entries(modes).map(([mode,[label,symbol,base,layer]])=>
+      `<button type="button" class="theme-gallery-card mode-choice" data-action="mode" data-value="${mode}" aria-pressed="${mode===appearance.mode}" style="--theme-a:${base};--theme-b:${layer}"><span class="theme-status"></span><span class="theme-mini">${icon(symbol)}</span><strong>${label}</strong></button>`).join('')}</div></section>
+    <section class="appearance-card gallery-section"><h3>ألوان المنصة</h3><div class="theme-gallery-grid">${Object.entries(palettes).filter(([key])=>key!=='custom' || profile?.appearance?.custom).map(([key,palette])=>{
       const locked = palette.premium && !isPaid();
-      return `<button type="button" class="palette-option" data-action="palette" data-value="${key}" aria-pressed="${appearance.palette===key}">
-        <span class="swatch" style="background:${key==='custom'?customFill(appearance.custom):palette.swatch}">${locked?icon('lock-keyhole'):''}</span>${palette.label}</button>`;
-    }).join('')}</div>${!isPaid()?'<p class="bodycopy">الزمردي والأزرق متاحان للجميع. التدرجات والألوان الأخرى مع برو وسبيشل.</p>':''}</section>
+      const selected=appearance.palette===key;
+      const fill=key==='custom'?customFill(appearance.custom):palette.swatch;
+      return `<button type="button" class="theme-gallery-card palette-choice" data-action="palette" data-value="${key}" aria-pressed="${selected}" style="--theme-fill:${fill}"><span class="theme-status">${locked?icon('lock-keyhole'):''}</span><span class="theme-mini palette-mini"></span><strong>${palette.label}</strong>${locked?'<small>مميّز</small>':''}</button>`;
+    }).join('')}</div>${!isPaid()?'<p class="gallery-note">الزمردي والأزرق متاحان للجميع، وبقية المظاهر للمشتركين.</p>':''}</section>
+    <section class="appearance-card gallery-section"><div class="gallery-title"><h3>ثيمات التخصصات</h3><small>تتطبق على المنصة كاملة</small></div><div class="theme-gallery-grid specialty-gallery">${specialtyCards}</div></section>
     ${isPaid()?customPaletteForm(appearance.custom):''}
     <section class="appearance-card glass-settings">
       <label for="glass-range">${icon(isPaid()?'droplets':'lock-keyhole')} شفافية الزجاج <output id="glass-value" for="glass-range">${num(appearance.transparency)}٪</output></label>
