@@ -563,8 +563,8 @@ io.on('connection', async(socket) => {
     return goal || 'جلسة تركيز';
   };
   action('create', async({ minutes, goal, pact }) => {
-    if (!validDuration(minutes)) fail('اختر مدة بين ٥ و١٨٠ دقيقة بمضاعفات ٥.');
-    if (minutes >= 120 && !await isPaid(id)) fail('جلسات ١٢٠ و١٨٠ دقيقة للمشتركين فقط.');
+    if (!validDuration(minutes)) fail('اختر مدة بين 5 و180 دقيقة بمضاعفات 5.');
+    if (minutes >= 120 && !await isPaid(id)) fail('جلسات 120 و180 دقيقة للمشتركين فقط.');
     const roomId=randomUUID().replaceAll('-','');
     const room = { id:roomId, code:newRoomCode(), phase:'lobby', created:clock.now(),
       minutes, pact:String(pact || '').trim().slice(0,160), members:[] };

@@ -20,8 +20,8 @@ export const specialties = {
 };
 export const items = {
   shield: [0,'درع الطوارئ',100,'shield','يحمي سلسلة التزامك عند الانسحاب أو انقطاع الاتصال.'],
-  marathon: [0,'تذكرة الماراثون',120,'ticket','تفتح جلسة واحدة مدتها ١٢٠ دقيقة.'],
-  pause: [0,'استراحة محارب',80,'coffee','استراحة ٣ دقائق بموافقة شريكك.'],
+  marathon: [0,'تذكرة الماراثون',120,'ticket','تفتح جلسة واحدة مدتها 120 دقيقة.'],
+  pause: [0,'استراحة محارب',80,'coffee','استراحة 3 دقائق بموافقة شريكك.'],
   eraser: [0,'ممحاة الانسحاب',300,'eraser','تزيل انسحابًا واحدًا من حساب نسبة الالتزام.'],
   scholar: [2,'دافور الدفعة',100,'graduation-cap','لقب يظهر بجوار اسمك.'],
   owl: [2,'بومة الليل',180,'moon','لقب يظهر بجوار اسمك.'],
@@ -74,7 +74,7 @@ export const storeArt = {
 };
 
 export const plans = {
-  pro: { title:'برو', duration:'٣٠ يومًا', icon:'crown', color:'#b8a0ff' },
+  pro: { title:'برو', duration:'30 يومًا', icon:'crown', color:'#b8a0ff' },
   special: { title:'سبيشل', duration:'مدى الحياة', icon:'gem', color:'#f4c57c' }
 };
 
