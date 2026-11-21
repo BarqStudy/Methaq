@@ -158,7 +158,7 @@ async function profile(id, includeAnalytics=true) {
   const equipped = JSON.parse(player.equipped);
   if (plan.tier === 'free') {
     for (const slot of ['title','frame']) if (!cosmetics[equipped[slot]]) delete equipped[slot];
-    if (!inventory[equipped.theme]) delete equipped.theme;
+    if (!items[equipped.theme] || !inventory[equipped.theme]) delete equipped.theme;
     if (!inventory[equipped.decoration]) delete equipped.decoration;
     if (palettes[appearance.palette]?.premium) appearance.palette = 'emerald';
     appearance.transparency = glassRange.defaultValue;
