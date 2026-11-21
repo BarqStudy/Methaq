@@ -367,15 +367,15 @@ function memberships() {
     }).join('')}</div>
     ${active==='free'&&profile?.plan?.trialAvailable?button('startTrial','ابدأ تجربة برو المجانية · ٣ أيام','secondary','timer'):''}</section>`;
 }
-function plansPage(){return `<div class="inner store-page">${heading('الاشتراكات','مزايا أكثر لجلسات تركيز أهدأ وأطول.')}${memberships()}</div>`;}
+function redeemCodeCard(){return `<form id="redeem-code-form" class="panel join-code redeem-code">
+    <label class="field"><strong>عندك كود؟ فعّله الآن</strong><small class="code-hint">افتح مزايا عضويتك فورًا</small><input name="code" dir="ltr" maxlength="21" placeholder="MTHQ-…" required></label>
+    <button class="secondary">${icon('ticket-check')} فعّل الكود</button>
+  </form>`;}
+function plansPage(){return `<div class="inner store-page">${heading('الاشتراكات','مزايا أكثر لجلسات تركيز أهدأ وأطول.')}${redeemCodeCard()}${memberships()}</div>`;}
 function store() {
   const p = profile;
   return `<div class="inner store-page">${heading('متجر ميثاق','رصيدك الحالي '+num(p?.points)+' نقطة')}
   <section class="panel store-theme-entry"><span class="tile-icon">${icon('palette')}</span><div><h2>المظهر والثيمات</h2><p class="bodycopy">الوضع ${profile?.appearance?.mode==='dark'?'الليلي':'النهاري'} · ${palettes[profile?.appearance?.palette || 'emerald'].label}، وثيمات تخصصية كاملة.</p></div>${button('appearanceMenu','تخصيص المظهر','secondary','sliders-horizontal')}</section>
-  <form id="redeem-code-form" class="panel join-code redeem-code">
-    <label class="field"><strong>عندك كود؟ فعّله الآن</strong><small class="code-hint"> افتح مزايا عضويتك فورًا</small><input name="code" dir="ltr" maxlength="21" placeholder="MTHQ-…" required></label>
-    <button class="secondary">${icon('ticket-check')} فعّل الكود</button>
-  </form>
   <div class="filters">${sections.map((x,i)=>button('filter',x,i===category?'selected':'','',i)).join('')}</div>
   ${shopItems(category)}</div>`;
 }
