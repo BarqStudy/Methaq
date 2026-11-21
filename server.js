@@ -156,6 +156,7 @@ async function profile(id, includeAnalytics=true) {
   if (plan.tier!=='free') appearance.custom = await membership.customPalette(id);
   const inventory = JSON.parse(player.inventory);
   const equipped = JSON.parse(player.equipped);
+  for(const slot of ['theme','decoration','celebration','title','frame'])if(equipped[slot]&&!items[equipped[slot]])delete equipped[slot];
   if (plan.tier === 'free') {
     for (const slot of ['title','frame']) if (!cosmetics[equipped[slot]]) delete equipped[slot];
     if (!items[equipped.theme] || !inventory[equipped.theme]) delete equipped.theme;
@@ -215,7 +216,7 @@ async function finish(room, leaving) {
   const rewarded = new Set();
   await transaction(async() => {
     for (const p of room.members) {
-      const current = await profile(p.id);
+      const current = await profile(p.id,false);
       const status = !leaving ? 'success' : leaving === p.id ? 'left' : 'steadfast';
       const reward = status === 'success' ? successReward : status === 'left' ? -Math.min(rewards.withdrawal,current.points) : rewards.steadfast;
       const today = new Date(now).toISOString().slice(0,10);
@@ -237,9 +238,10 @@ async function finish(room, leaving) {
   room.phase = 'outcome';
   room.outcomeType=leaving?'withdrawal':'success';
   room.finished = now;
-  if (!leaving) room.breakUntil = now+sessionBreak(room.minutes)*minute;
-  for (const player of new Set([...room.members.map(p=>p.id),...rewarded])) io.to('player:'+player).emit('profile',await profile(player));
-  await saveRoom(room,true);await send(room);
+  delete room.breakUntil;
+  await saveRoom(room,true);
+  await Promise.all([...new Set([...room.members.map(p=>p.id),...rewarded])].map(async player=>io.to('player:'+player).emit('profile',await profile(player))));
+  await send(room);
   for(const member of room.members){if(io.sockets.adapter.rooms.get('player:'+member.id)?.size)await run('INSERT INTO outcome_views(room,player,seen_at) VALUES(?,?,?) ON CONFLICT(room,player) DO NOTHING',room.id,member.id,clock.now());}
 }
 
@@ -596,6 +598,12 @@ io.on('connection', async(socket) => {
   });
   action('leaveLobby', () => leaveWaitingRoom(current(),id));
   action('dismissOutcome',()=>dismissOutcome(current(),id));
+  action('outcomeBreak',async()=>{
+    const room=current();
+    if(room?.phase!=='outcome'||room.outcomeType!=='success')fail('الاستراحة غير متاحة الآن.');
+    if(!room.breakUntil||room.breakUntil<=clock.now())room.breakUntil=clock.now()+sessionBreak(room.minutes)*minute;
+    await saveRoom(room,true);await send(room);
+  });
   action('ready', async() => {
     const room = current();
     if (room?.phase !== 'lobby') return;

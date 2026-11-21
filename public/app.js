@@ -261,13 +261,13 @@ function outcome() {
   return `<div class="inner">${heading(succeeded?'أتممتما الميثاق!':left?'انتهت الجلسة بانسحابك':'صمدت حتى النهاية',succeeded?'أحسنتما الالتزام بجلسة التركيز.':left?'يمكنك بدء جلسة جديدة عندما تكون مستعدًا.':'منحتك المنصة '+num(result.reward)+' نقطة تعويض صمود.') }<div class="stack">
   <section class="panel stack"><strong class="mint">${icon('sparkles')} ${result.reward>0?'+':''}${num(result.reward)} نقطة</strong>
   ${succeeded ? `<p class="bodycopy">${result.reward===successReward ? num(rewards.achievement)+' نقطة إنجاز · ' : ''}سلسلة الالتزام ${num(profile.streak)} يوم</p><h2>هل أنجزت هدفك؟</h2><div class="actions">${button('result','نعم',result.goal_done===1?'primary':'secondary','','yes')}${button('result','ليس بعد',result.goal_done===0?'primary':'secondary','','no')}</div>
-  ${button('shareCard','مشاركة بطاقة الإنجاز','primary','share-2')}${profile.inventory.horn?button('signal','بوق الفوز','secondary','megaphone','horn'):''}` : ''}
+  ${profile.inventory.horn?button('signal','بوق الفوز','secondary','megaphone','horn'):''}` : ''}
   ${left && profile.inventory.shield && result.old_streak && !profile.streak ? button('protect','استخدام درع الحماية','secondary','shield','shield'):''}
   </section>
   ${succeeded && room.breakUntil ? `<section class="panel break-card">
     <span class="tile-icon">${icon('timer-reset')}</span><div><h2>استراحة بعد التركيز</h2><p class="bodycopy">${num(breakDuration(room.minutes))} دقيقة قبل جلستك التالية</p></div>
     <strong class="break-time" id="break-time" dir="ltr"></strong></section>`:''}
-  <div class="actions">${button('reset','جلسة جديدة','secondary','plus')}${button('goHome','رجوع للرئيسية','plain','arrow-right')}</div></div></div>`;
+  <div class="actions outcome-actions">${succeeded&&!room.breakUntil?button('outcomeBreak','أخذ استراحة','secondary','timer-reset'):''}${button('goHome','إنهاء والخروج','primary','log-out')}</div></div></div>`;
 }
 const weekDay = new Intl.DateTimeFormat('ar-SA',{weekday:'short',timeZone:'UTC'});
 const sessionDate = new Intl.DateTimeFormat('ar-SA',{day:'numeric',month:'short',calendar:'gregory',timeZone:'UTC'});
@@ -784,8 +784,9 @@ function updateClock() {
   const paused = now < room.pauseUntil;
   const remaining = Math.max(0,(counting?room.startsAt:paused?room.pauseUntil:room.endAt)-now);
   const value = Math.ceil(remaining/1000);
-  digits.textContent = counting ? String(value) : formatClock(value);
-  document.querySelector('#dial-label').textContent = counting?'تبدأ الجلسة خلال':paused?'وقت الاستراحة':'الوقت المتبقي';
+  const completed=!counting&&!paused&&value===0;
+  digits.textContent = completed?'✓':counting ? String(value) : formatClock(value);
+  document.querySelector('#dial-label').textContent = completed?'اكتملت الجلسة':counting?'تبدأ الجلسة خلال':paused?'وقت الاستراحة':'الوقت المتبقي';
   const focusRemaining = counting ? room.endAt-room.startsAt : room.endAt-(paused ? room.pauseUntil : now);
   digits.closest('.dial').style.setProperty('--progress',dialProgress(focusRemaining/60000));
 }
@@ -821,18 +822,6 @@ function showGiftMoment(data={}) {
   document.body.append(moment);
   vibe();
   setTimeout(()=>{moment.classList.add('leaving');setTimeout(()=>moment.remove(),450);},3400);
-}
-function showSessionCelebration(){
-  document.querySelector('.session-celebration')?.remove();
-  const equipped=profile?.equipped?.celebration;
-  const key=items[equipped]?.[0]===5?equipped:'celebrate_confetti';
-  const [,label,,symbol]=items[key];
-  const overlay=document.createElement('div');
-  overlay.className='session-celebration';
-  overlay.dataset.celebration=key.replace('celebrate_','');
-  overlay.innerHTML=`<div class="celebration-particles" aria-hidden="true">${Array.from({length:30},(_,index)=>`<i style="--i:${index};--x:${(index*37)%100-50}vw"></i>`).join('')}</div><section class="celebration-card" role="dialog" aria-modal="true" aria-labelledby="celebration-title"><div class="celebration-rings" aria-hidden="true"></div><span class="celebration-icon">${icon(symbol)}</span><small>ميثاق مكتمل</small><h2 id="celebration-title">أحسنتم! أتممتما الجلسة</h2><p>صمدتما معًا حتى نهاية المؤقت. لحظة إنجاز تستحق الاحتفال.</p><strong>${label}</strong><button type="button" class="primary" data-action="closeCelebration">${icon('trophy')} عرض النتيجة</button></section>`;
-  document.body.append(overlay);
-  tg?.HapticFeedback?.notificationOccurred?.('success');
 }
 function invitePanel(){
   if(room.members.length===2)return '';
@@ -882,24 +871,6 @@ async function shareInvite(button) {
     button.disabled = false;
   }
 }
-async function shareCard() {
-  await document.fonts.ready;
-  const canvas = Object.assign(document.createElement('canvas'),{width:720,height:1280});
-  const ctx = canvas.getContext('2d');
-  ctx.fillStyle='#121417';ctx.fillRect(0,0,720,1280);
-  ctx.strokeStyle='#58dfb0';ctx.lineWidth=3;ctx.strokeRect(52,52,616,1176);
-  ctx.direction='rtl';ctx.textAlign='center';
-  for (const [label,y,size,color] of [['ميثاق التركيز',245,44,'#58dfb0'],['أتممتُ ميثاق التركيز',520,49,'#f3f4f6'],[num(room.minutes)+' دقيقة تركيز ثنائي',635,39,'#f3f4f6'],['+'+num(profile?.history.find(result=>result.room===room.id)?.reward || successReward)+' نقطة من المنصة',735,33,'#58dfb0'],['LOCK-IN DUO',1080,28,'#a1a6b0']]) {
-    ctx.fillStyle=color;ctx.font='700 '+size+'px Plex, Arial';ctx.fillText(label,360,y);
-  }
-  const file = new File([await new Promise(resolve=>canvas.toBlob(resolve))],'methaq-achievement.png',{type:'image/png'});
-  if (navigator.canShare?.({files:[file]})) {
-    try { await navigator.share({files:[file]}); return; } catch (error) { if (error.name==='AbortError') return; }
-  }
-  const url=URL.createObjectURL(file);
-  Object.assign(document.createElement('a'),{href:url,download:file.name}).click();
-  setTimeout(()=>URL.revokeObjectURL(url),1000);
-}
 document.addEventListener('click',event=>{
   if (blocked) return;
   const nav = event.target.closest('[data-tab]');
@@ -920,7 +891,6 @@ document.addEventListener('click',event=>{
   } else if(action==='tourPrevious'){tourIndex=Math.max(0,tourIndex-1);showTourStep();}
   else if(action==='tourSkip')endTour(true);
   else if(action==='startTour')startTour();
-  else if(action==='closeCelebration')document.querySelector('.session-celebration')?.remove();
   else if (action==='duration') {
     if (!durationAllowed(+value)) return premiumDuration(+value);
     chosen=+value; render(true);
@@ -980,7 +950,7 @@ document.addEventListener('click',event=>{
   else if (action==='close') dialog.close();
   else if (action==='confirmWithdraw') { dialog.close(); emit('withdraw'); }
   else if (action==='reset') { revisited=true;emit('dismissOutcome');room=null;tab='home';render(true); }
-  else if (action==='shareCard') shareCard().catch(()=>toast('تعذرت مشاركة البطاقة.'));
+  else if (action==='outcomeBreak') emit('outcomeBreak');
   else if (action==='answerPause') emit(action,{accept:value==='yes'});
   else if (action==='result') submitGoalResult(value==='yes');
   else if (action==='newGoalSession') {if(dialog.open)dialog.close();revisited=true;emit('dismissOutcome');room=null;tab='home';render(true);window.scrollTo({top:0,behavior:'instant'});}
@@ -1143,7 +1113,6 @@ socket.on('room', next=>{
     tab='home';
   }
   render();
-  if(previous?.phase==='active'&&next?.phase==='outcome'&&next.outcomeType==='success')setTimeout(showSessionCelebration,220);
   if (tab==='home' && (previous?.id!==next?.id || previous?.phase!==next?.phase)) {
     window.scrollTo({top:0,behavior:'instant'});
   }
