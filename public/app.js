@@ -13,6 +13,7 @@ if (telegramLaunch && !window.Telegram?.WebApp) {
 }
 const tg = window.Telegram?.WebApp;
 tg?.ready();
+tg?.disableClosingConfirmation?.();
 if (tg?.initData) {
   tg.expand();
   const inset = () => {
@@ -118,9 +119,10 @@ function maybeStartTour(){
 addEventListener('resize',()=>tourIndex>=0&&positionTour());
 addEventListener('scroll',()=>tourIndex>=0&&requestAnimationFrame(positionTour),{passive:true});
 function emit(event,payload={}) {
-  if (!socket?.connected) return toast('الاتصال غير متاح حاليًا.');
+  if (!socket?.connected) return;
   socket.timeout(12000).emit(event,payload,(error,response) => {
-    if (error || response?.error) toast(response?.error || 'تعذر الاتصال بالخادم.');
+    if (response?.error) toast(response.error);
+    else if (error) return;
     else if (['buy','equip','protect'].includes(event)) toast('تم تحديث مخزونك.');
     else if (event==='customPalette') toast('تم حفظ ألوانك.');
     else if (event==='appearance') toast('تم حفظ المظهر.');
@@ -761,10 +763,6 @@ function render(force=false) {
     }
     viewKey = key;
   }
-  if (tg?.initData && Boolean(phase==='active') !== tg.isClosingConfirmationEnabled) {
-    if (phase==='active') tg.enableClosingConfirmation();
-    else tg.disableClosingConfirmation();
-  }
   updateClock();
 }
 function formatClock(seconds) {
@@ -1094,9 +1092,10 @@ function showBan(message) {
 socket.on('banned',showBan);
 socket.on('connect_error',error=>{
   if (error.message==='حُظر هذا الحساب من استخدام ميثاق.') showBan(error.message);
-  else toast(error.message);
 });
-socket.on('disconnect',()=>{ if (!blocked) toast('انقطع الاتصال. جارٍ إعادة المحاولة.'); });
+socket.on('connect',()=>{
+  if(/timeout|الاتصال|انقطع/i.test(notice.textContent))notice.textContent='';
+});
 function updateProfile(data) {
   const bonus = profile ? data.referralBonus - profile.referralBonus : 0;
   if (bonus>0) toast('وصلتك '+num(bonus)+' نقطة من دعوة صديق.');
