@@ -733,6 +733,7 @@ select{appearance:none;-webkit-appearance:none;min-height:42px;padding:8px 13px 
 
 /* Prominent, scannable store categories. */
 .store-page>.filters{display:flex;gap:8px;margin:4px 0 18px;padding:7px;overflow-x:auto;border:1px solid var(--glass-edge);border-radius:20px;background:color-mix(in srgb,var(--surface) 86%,transparent);box-shadow:inset 0 1px 0 var(--glass-rim);scroll-snap-type:x proximity;scrollbar-width:none}.store-page>.filters::-webkit-scrollbar{display:none}.store-page>.filters button{flex:0 0 auto;min-height:44px;padding:9px 15px;border:1px solid transparent;border-radius:14px;background:transparent;color:var(--muted);font-size:12px;font-weight:700;scroll-snap-align:start}.store-page>.filters button.selected{border-color:color-mix(in srgb,var(--accent) 48%,var(--line));background:var(--accent);color:var(--accent-ink);box-shadow:0 7px 16px color-mix(in srgb,var(--accent) 22%,transparent),inset 0 1px 0 #fff7}.store-page>.filters button:not(.selected):hover{border-color:var(--line);background:var(--panel);color:var(--text)}
+.store-page>.filters button.selected{background:transparent;color:var(--accent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 20%,transparent)}
 @media(max-width:620px){.product-grid{grid-template-columns:1fr}.store-item{min-height:370px}.inventory-item{grid-template-columns:92px minmax(0,1fr)}.inventory-copy h3{font-size:18px}}
 
 /* Start at twelve o'clock and fill exactly once in the clockwise direction. */
