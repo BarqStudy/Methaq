@@ -246,7 +246,7 @@ function active() {
   <section class="panel preview active-dial" ${decorationStyle()}>${decorationIcon()}${dial('00:00','الوقت المتبقي')}</section>${pair(true)}
   ${request ? '<section class="panel actions">'+(request.id===user.id?'بانتظار موافقة شريكك على الاستراحة.':'شريكك يطلب استراحة لمدة ٣ دقائق. '+button('answerPause','أوافق','primary','','yes')+button('answerPause','متابعة الجلسة','secondary','','no'))+'</section>':''}
   <section class="panel focus-tools stack">
-    <div class="tool-section sound-section"><div class="tool-heading">${icon('volume-2')}<div><h3>أجواء هادئة</h3><p>صوت خافت يساعدك على التركيز</p></div></div><div class="sound-grid" aria-label="أصوات الخلفية">${[['rain','مطر هادئ','cloud-rain'],['cafe','مقهى هادئ','coffee'],['white','ضوضاء ناعمة','waves']].map(([k,v,symbol])=>button('sound',v,ambience===k?'primary sound-choice active':'secondary sound-choice',symbol,k)).join('')}</div></div>
+    <div class="tool-section sound-section"><div class="tool-heading">${icon('volume-2')}<div><h3>أجواء وأصوات</h3><p>تسجيلات محيطية ناعمة تساعدك على التركيز</p></div></div><div class="sound-grid" aria-label="أصوات الخلفية">${[['rain','مطر هادئ','cloud-rain'],['cafe','مقهى خافت','coffee'],['forest','غابة هادئة','trees'],['fire','مدفأة هادئة','flame']].map(([k,v,symbol])=>button('sound',v,ambience===k?'primary sound-choice active':'secondary sound-choice',symbol,k)).join('')}</div></div>
     ${(inventory.zap||inventory.coffee||inventory.pause||(isPaid()&&!room.premiumPauseUsed))?`<div class="tool-section gift-section"><div class="tool-heading">${icon('gift')}<div><h3>تفاعل مع شريكك</h3><p>لفتة صغيرة تصل إليه فورًا</p></div></div><div class="gift-grid">${inventory.zap?button('signal','صعقة التركيز','secondary gift-action','zap','zap'):''}${inventory.coffee?button('signal','إهداء قهوة','secondary gift-action','coffee','coffee'):''}${inventory.pause||(isPaid()&&!room.premiumPauseUsed)?button('requestPause','استراحة محارب','secondary gift-action','timer-reset'):''}</div></div>`:''}
     <div class="withdraw-section"><div><strong>إنهاء الجلسة</strong><small>سيُسجّل الانسحاب في حسابك</small></div>${button('withdraw','انسحاب','danger withdraw-action','log-out')}</div>
   </section></div></div>`;
@@ -819,28 +819,51 @@ function sound(type, toggle=true) {
   const Context = window.AudioContext || window.webkitAudioContext;
   if (!Context) return toast('الصوت غير مدعوم في هذا المتصفح.');
   audio = new Context();
-  const buffer = audio.createBuffer(1,audio.sampleRate*4,audio.sampleRate);
-  const samples = buffer.getChannelData(0);
-  let previous=0;
-  for (let i=0;i<samples.length;i++) {
-    const raw = Math.random()*2-1;
-    previous = (previous+.035*raw)/1.035;
-    if (type==='white') samples[i]=raw*.20;
-    else if (type==='rain') samples[i]=raw*.1+previous*2;
-    else if (type==='fire') samples[i]=previous*2+(Math.random()<.003?raw*.4:0);
-    else if (type==='forest') samples[i]=previous*(2.6+Math.sin(i/audio.sampleRate*3));
-    else samples[i]=previous*2.7+Math.sin(i/audio.sampleRate*2*Math.PI*130)*.018;
+  const seconds=12,rate=audio.sampleRate;
+  const buffer=audio.createBuffer(2,rate*seconds,rate);
+  for(let channel=0;channel<2;channel++){
+    const samples=buffer.getChannelData(channel);
+    let brown=0,smooth=0,previousRaw=0,drop=0,crackle=0;
+    let birdAt=Math.floor(rate*(1.4+Math.random()*2.5)),birdLength=0,birdFrequency=0;
+    for(let i=0;i<samples.length;i++){
+      const raw=Math.random()*2-1;
+      brown=(brown+0.018*raw)/1.018;
+      smooth+=(raw-smooth)*0.006;
+      let value=0;
+      if(type==='rain'){
+        if(Math.random()<0.00012)drop=.22+Math.random()*.18;
+        drop*=.9972;
+        value=(raw-previousRaw)*.055+brown*.20+drop*Math.sin(i*.071+channel);
+      }else if(type==='fire'){
+        if(Math.random()<0.00034)crackle=.35+Math.random()*.38;
+        crackle*=.986;
+        value=brown*.22+smooth*.16+crackle*raw;
+      }else if(type==='forest'){
+        if(i>=birdAt&&birdLength<=0){birdLength=Math.floor(rate*(.16+Math.random()*.2));birdFrequency=1450+Math.random()*1100;birdAt=i+Math.floor(rate*(2+Math.random()*4));}
+        const bird=birdLength>0?Math.sin(i/rate*Math.PI*2*(birdFrequency+(birdLength%700)*.7))*Math.sin(Math.PI*birdLength/(rate*.36))*.075:0;
+        if(birdLength>0)birdLength--;
+        value=brown*.17+smooth*.27+bird;
+      }else{
+        const murmur=Math.sin(i/rate*Math.PI*2*(92+channel*17))*.012+Math.sin(i/rate*Math.PI*2*137)*.008;
+        value=brown*.20+smooth*.30+murmur;
+      }
+      previousRaw=raw;
+      samples[i]=Math.max(-.72,Math.min(.72,value));
+    }
   }
   const source = audio.createBufferSource();
   source.buffer = buffer;
   source.loop=true;
-  const filter = audio.createBiquadFilter();
+  const filter=audio.createBiquadFilter();
   filter.type='lowpass';
-  filter.frequency.value=1800;
-  filter.Q.value=.25;
+  filter.frequency.value=type==='rain'?5200:type==='fire'?2800:2200;
+  filter.Q.value=.18;
+  const compressor=audio.createDynamicsCompressor();
+  compressor.threshold.value=-28;compressor.knee.value=20;compressor.ratio.value=3;compressor.attack.value=.08;compressor.release.value=.7;
   const gain = audio.createGain();
-  gain.gain.value=.045;
-  source.connect(filter).connect(gain).connect(audio.destination);
+  gain.gain.value=0;
+  gain.gain.linearRampToValueAtTime(type==='rain'?.16:.19,audio.currentTime+1.2);
+  source.connect(filter).connect(compressor).connect(gain).connect(audio.destination);
   source.start();
   audio.resume().catch(()=>toast('تعذر تشغيل الصوت.'));
   ambience = type;
