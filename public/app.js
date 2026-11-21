@@ -489,11 +489,19 @@ function adminPage() {
       ${!entry.redeemed_by?button('adminCopy','نسخ الكود','secondary','copy',entry.code):''}</div>`).join('')}</section></div></div>`;
 }
 
+let appearanceSnapFrame;
+function snapAppearance(){
+  const root=document.documentElement;
+  const request=++appearanceSnapFrame;
+  root.classList.add('appearance-snap');
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{if(request===appearanceSnapFrame)root.classList.remove('appearance-snap');}));
+}
 function changeAppearance(next) {
   if(!profile?.appearance)return;
   const previous={...profile.appearance};
   const request=++appearanceRequest;
   visualUpdatePending=true;
+  snapAppearance();
   profile.appearance={...profile.appearance,...next};
   applyAppearance();
   if(appearanceOpen&&dialog.open){
@@ -508,7 +516,7 @@ function changeAppearance(next) {
       if(response.error)throw new Error(response.error);
       if(request===appearanceRequest)visualUpdatePending=false;
     }catch(error){
-      if(request===appearanceRequest){visualUpdatePending=false;profile.appearance=previous;applyAppearance();openAppearance();}
+      if(request===appearanceRequest){visualUpdatePending=false;snapAppearance();profile.appearance=previous;applyAppearance();openAppearance();}
       toast(error.message||'تعذّر حفظ المظهر.');
     }
   },120);
