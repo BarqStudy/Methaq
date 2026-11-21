@@ -1,4 +1,4 @@
-import { items,sections,palettes,plans,rewards,successReward,storeArt,defaultAppearance,glassRange,durations,referralPoints,specialties,specialOnly } from './catalog.js';
+import { items,sections,palettes,plans,rewards,successReward,storeArt,defaultAppearance,glassRange,durations,referralPoints,specialties,specialOnly,premiumOnly } from './catalog.js';
 import { readRoomInvite,readReferralInvite,telegramInviteUrl } from './invite.js';
 
 const telegramLaunch = /(?:^#|[&?])tgWebApp/.test(location.hash) || new URLSearchParams(location.search).has('tgWebAppStartParam')
@@ -401,7 +401,7 @@ function shopItems(groupIndex) {
     const expires = p?.cosmetics?.[key];
     const collectible = [1,2,4,5].includes(group);
     const specialLocked=specialOnly.has(key)&&profile?.plan?.tier!=='special';
-    const membershipLocked=group===4&&!isPaid();
+    const membershipLocked=premiumOnly.has(key)&&!isPaid();
     const locked=specialLocked||membershipLocked;
     const included=[1,2,4].includes(group)&&isPaid();
     const available = !locked&&collectible && (included || (group===2 ? expires : count));

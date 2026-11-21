@@ -81,9 +81,10 @@ test('runs Telegram invitations, admin changes, custom appearance, and referral 
   assert.equal(free.plan.tier,'free');
   assert.equal(free.appearance.palette,'emerald');
   assert.equal(free.equipped.decoration,undefined);
+  assert.deepEqual(await command(host,'adminGrant',{plan:'pro',student:'101'}),{ok:true});
   const celebrationPoints=once(host,'profile');
-  assert.deepEqual(await command(host,'adminPoints',{student:'101',points:100}),{ok:true});
-  assert.equal((await celebrationPoints)[0].points,100);
+  assert.deepEqual(await command(host,'adminPoints',{student:'101',points:195}),{ok:true});
+  assert.equal((await celebrationPoints)[0].points,195);
   const celebrationPurchase=once(host,'profile');
   assert.deepEqual(await command(host,'buy',{item:'celebrate_stars'}),{ok:true});
   assert.equal((await celebrationPurchase)[0].inventory.celebrate_stars,1);
@@ -140,10 +141,10 @@ test('runs Telegram invitations, admin changes, custom appearance, and referral 
   assert.equal(outcome.breakUntil-outcome.finished,5*60000);
   assert.ok((await command(recipient,'buy',{item:'owl',quantity:2})).error);
   const inventory = once(recipient,'profile');
-  assert.deepEqual(await command(recipient,'buy',{item:'horn',quantity:3}),{ok:true});
+  assert.deepEqual(await command(recipient,'buy',{item:'coffee',quantity:3}),{ok:true});
   const [purchased] = await inventory;
-  assert.equal(purchased.inventory.horn,3);
-  assert.equal(purchased.points,90);
+  assert.equal(purchased.inventory.coffee,3);
+  assert.equal(purchased.points,75);
   clock.now = Date.now;
 
   const banned = once(recipient,'banned');

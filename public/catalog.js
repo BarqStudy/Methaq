@@ -21,24 +21,24 @@ export const items = {
   shield: [0,'درع الطوارئ',100,'shield','يحمي سلسلة التزامك عند الانسحاب أو انقطاع الاتصال.'],
   marathon: [0,'تذكرة الماراثون',120,'ticket','تفتح جلسة واحدة مدتها ١٢٠ دقيقة.'],
   pause: [0,'استراحة محارب',80,'coffee','استراحة ٣ دقائق بموافقة شريكك.'],
-  eraser: [0,'ممحاة الانسحاب',150,'eraser','تزيل انسحابًا واحدًا من حساب نسبة الالتزام.'],
+  eraser: [0,'ممحاة الانسحاب',300,'eraser','تزيل انسحابًا واحدًا من حساب نسبة الالتزام.'],
   rain: [1,'مطر منتصف الليل',80,'cloud-rain','أجواء زرقاء وصوت مطر هادئ.'],
-  cafe: [1,'مقهى الفجر',80,'coffee','أجواء دافئة وهمهمة مقهى.'],
-  forest: [1,'غابة الضباب',80,'trees','أجواء خضراء وحفيف هادئ.'],
-  fire: [1,'مدفأة الشتاء',80,'flame','أجواء كهرمانية وطقطقة المدفأة.'],
+  cafe: [1,'مقهى الفجر',180,'coffee','أجواء دافئة وهمهمة مقهى.'],
+  forest: [1,'غابة الضباب',220,'trees','أجواء خضراء وحفيف هادئ.'],
+  fire: [1,'مدفأة الشتاء',260,'flame','أجواء كهرمانية وطقطقة المدفأة.'],
   scholar: [2,'دافور الدفعة',100,'graduation-cap','لقب يظهر بجوار اسمك.'],
-  owl: [2,'بومة الليل',100,'moon','لقب يظهر بجوار اسمك.'],
-  steadfast: [2,'صامد للنهاية',120,'award','لقب يظهر بجوار اسمك.'],
-  frame: [2,'الإطار الذهبي',150,'circle-user-round','إطار ذهبي لصورتك الشخصية.'],
+  owl: [2,'بومة الليل',180,'moon','لقب يظهر بجوار اسمك.'],
+  steadfast: [2,'صامد للنهاية',260,'award','لقب يظهر بجوار اسمك.'],
+  frame: [2,'الإطار الذهبي',350,'circle-user-round','إطار ذهبي لصورتك الشخصية.'],
   zap: [3,'صعقة التركيز',30,'zap','إشارة اهتزاز إضافية خلال الجلسة.'],
-  horn: [3,'بوق الفوز',35,'megaphone','احتفل مع شريكك بعد النجاح.'],
+  horn: [3,'بوق الفوز',120,'megaphone','احتفل مع شريكك بعد النجاح.'],
   coffee: [3,'كوب قهوة',40,'coffee','أرسل بطاقة قهوة لشريكك أثناء الجلسة.'],
   celebrate_confetti: [5,'مهرجان القصاصات',70,'party-popper','قصاصات ملونة تنفجر حول إنجازك.'],
-  celebrate_stars: [5,'مجرة النجوم',85,'sparkles','نجوم لامعة تدور حول بطاقة الإنجاز.'],
-  celebrate_petals: [5,'بتلات النجاح',90,'flower-2','بتلات هادئة تتساقط احتفالًا بإنجازك.'],
-  celebrate_rocket: [5,'انطلاقة الصاروخ',110,'rocket','صاروخ ينطلق بقوة بعد إتمام الجلسة.'],
-  celebrate_crown: [5,'تتويج المنجز',130,'crown','لحظة تتويج ذهبية تليق بصمودك.'],
-  celebrate_aurora: [5,'شفق الإنجاز',150,'wand-sparkles','موجات شفق وأضواء ساحرة تملأ الشاشة.'],
+  celebrate_stars: [5,'مجرة النجوم',180,'sparkles','نجوم لامعة تدور حول بطاقة الإنجاز.'],
+  celebrate_petals: [5,'بتلات النجاح',220,'flower-2','بتلات هادئة تتساقط احتفالًا بإنجازك.'],
+  celebrate_rocket: [5,'انطلاقة الصاروخ',280,'rocket','صاروخ ينطلق بقوة بعد إتمام الجلسة.'],
+  celebrate_crown: [5,'تتويج المنجز',350,'crown','لحظة تتويج ذهبية تليق بصمودك.'],
+  celebrate_aurora: [5,'شفق الإنجاز',450,'wand-sparkles','موجات شفق وأضواء ساحرة تملأ الشاشة.'],
   ...Object.fromEntries(Object.entries(specialties).map(([id,[name,icon]]) =>
     [id,[4,name,95,icon,'أجواء '+name+' وزخارفه على كامل المنصة.']]))
 };
@@ -46,6 +46,9 @@ export const items = {
 export const rewards = { achievement:45, steadfast:25, withdrawal:20 };
 export const successReward = rewards.achievement;
 export const specialOnly = new Set(['eternal']);
+// 29 of the 36 visible products (about 80%) require an active membership.
+export const premiumOnly = new Set(['eraser','cafe','forest','fire','owl','steadfast','frame','horn',
+  'celebrate_stars','celebrate_petals','celebrate_rocket','celebrate_crown','celebrate_aurora',...Object.keys(specialties)]);
 
 export const glassRange = { min:12, max:46, defaultValue:24 };
 export const defaultAppearance = { mode:'light', palette:'emerald', transparency:glassRange.defaultValue };

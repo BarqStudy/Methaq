@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 import { createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Server } from 'socket.io';
 import { Telegraf, Markup } from 'telegraf';
-import { items,glassRange,palettes,plans,rewards,successReward,referralPoints,specialOnly } from './public/catalog.js';
+import { items,glassRange,palettes,plans,rewards,successReward,referralPoints,specialOnly,premiumOnly } from './public/catalog.js';
 import { createMembership,paidPrices } from './membership.js';
 import { roomInviteUrl } from './public/invite.js';
 import { createDatabase } from './database.js';
@@ -626,6 +626,7 @@ io.on('connection', async(socket) => {
   action('withdraw', async() => { const [room] = await active(); await finish(room,id); });
   action('signal', async({item}) => {
     const room = current();
+    if(premiumOnly.has(item)&&!await isPaid(id))fail('هذا التفاعل متاح مع برو وسبيشل.');
     if (item === 'horn' && (room?.phase !== 'outcome' || !(await profile(id)).history.some(r=>r.room===room.id && r.status==='success'))) fail('بوق الفوز متاح بعد إتمام الجلسة.');
     const [,p,partner] = item === 'horn' ? [room, room.members.find(m=>m.id===id),room.members.find(m=>m.id!==id)] : await active();
     if (clock.now()-(p.lastSignal || 0)<10000) fail('انتظر قليلًا قبل إرسال تنبيه آخر.');
@@ -661,6 +662,7 @@ io.on('connection', async(socket) => {
     const [category,,cost] = items[item];
     const { points,inventory,cosmetics } = await profile(id);
     if(specialOnly.has(item)&&(await membership.planStatus(id)).tier!=='special')fail('هذا الثيم حصري لعضوية سبيشل.');
+    if(premiumOnly.has(item)&&!await isPaid(id))fail('هذا المنتج متاح مع برو وسبيشل.');
     if(category===4&&!await isPaid(id))fail('ثيمات التخصصات متاحة مع برو وسبيشل.');
     if ([1,2,4].includes(category) && await isPaid(id)) fail('العنصر متاح لك ضمن العضوية.');
     const total = cost*quantity;
@@ -682,6 +684,7 @@ io.on('connection', async(socket) => {
     if (!Object.hasOwn(items,item) || ![1,2,4,5].includes(items[item][0])) fail('العنصر غير متاح.');
     const { inventory,cosmetics } = await profile(id);
     if(specialOnly.has(item)&&(await membership.planStatus(id)).tier!=='special')fail('هذا الثيم حصري لعضوية سبيشل.');
+    if(premiumOnly.has(item)&&!await isPaid(id))fail('هذا المنتج متاح مع برو وسبيشل.');
     const category = items[item][0];
     if(category===4&&!await isPaid(id))fail('ثيمات التخصصات متاحة مع برو وسبيشل.');
     if (!([1,2,4].includes(category)&&await isPaid(id)) && !(category === 2 ? cosmetics[item] : inventory[item])) fail('العنصر غير متاح.');
@@ -705,6 +708,7 @@ io.on('connection', async(socket) => {
   });
   action('protect', async({item}) => {
     if (!['shield','eraser'].includes(item)) fail('عنصر غير صالح.');
+    if(premiumOnly.has(item)&&!await isPaid(id))fail('هذا المنتج متاح مع برو وسبيشل.');
     const last = (await profile(id)).history[0];
     if (last?.status !== 'left' || (item === 'eraser' && last.forgiven)) fail('لا يوجد انسحاب حديث لمعالجته.');
     await transaction(async() => {
