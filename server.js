@@ -661,6 +661,7 @@ io.on('connection', async(socket) => {
     const [category,,cost] = items[item];
     const { points,inventory,cosmetics } = await profile(id);
     if(specialOnly.has(item)&&(await membership.planStatus(id)).tier!=='special')fail('هذا الثيم حصري لعضوية سبيشل.');
+    if(category===4&&!await isPaid(id))fail('ثيمات التخصصات متاحة مع برو وسبيشل.');
     if ([1,2,4].includes(category) && await isPaid(id)) fail('العنصر متاح لك ضمن العضوية.');
     const total = cost*quantity;
     const stackable = category===0 || category===3;
@@ -682,6 +683,7 @@ io.on('connection', async(socket) => {
     const { inventory,cosmetics } = await profile(id);
     if(specialOnly.has(item)&&(await membership.planStatus(id)).tier!=='special')fail('هذا الثيم حصري لعضوية سبيشل.');
     const category = items[item][0];
+    if(category===4&&!await isPaid(id))fail('ثيمات التخصصات متاحة مع برو وسبيشل.');
     if (!([1,2,4].includes(category)&&await isPaid(id)) && !(category === 2 ? cosmetics[item] : inventory[item])) fail('العنصر غير متاح.');
     const equipped = JSON.parse((await query('SELECT equipped FROM players WHERE id=?',id)).equipped);
     const slot = category === 5 ? 'celebration' : category === 4 ? 'decoration' : category === 1 ? 'theme' : item === 'frame' ? 'frame' : 'title';

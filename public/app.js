@@ -348,7 +348,10 @@ async function shareReferral(copyOnly) {
 function memberships() {
   const active = profile?.plan?.tier;
   const until = profile?.plan?.until;
-  const features={pro:['جلسات حتى ١٨٠ دقيقة','كل ثيمات التخصصات','ألوان مخصصة وشفافية الزجاج','استراحة محارب في كل جلسة'],special:['كل مزايا برو مدى الحياة','ثيم سبيشل الأبدي الحصري','شارة سبيشل بجانب اسمك','كل الثيمات المستقبلية دون شراء']};
+  const features={
+    pro:['جلسات حتى ١٨٠ دقيقة','كل ثيمات التخصصات','ألوان وتدرجات مخصصة','التحكم بشفافية الزجاج','استراحة محارب في كل جلسة','شارة برو وإطار حساب مميز'],
+    special:['كل مزايا برو مدى الحياة','لا تجديد ولا رسوم شهرية','ثيم سبيشل الأبدي الحصري','شارة سبيشل وإطار حساب حصري','كل الثيمات الحالية والمستقبلية','ألوان وتدرجات غير محدودة','أولوية المزايا الجديدة مستقبلًا']
+  };
   return `<section class="membership-section stack" id="memberships" aria-labelledby="membership-title">
     <div><h2 id="membership-title">عضويات ميثاق</h2><p class="bodycopy">اختر العضوية المناسبة لك، أو جرّب برو مجانًا لمدة ٣ أيام مرة واحدة.</p></div>
     ${active==='pro' && until ? `<div class="membership-countdown"><span>${profile.plan.trial?'تجربة برو':'برو'} مفعّل حتى ${new Date(until).toLocaleDateString('ar-SA')}</span><strong data-membership-until="${until}">${remainingTime(until,serverNow())}</strong></div>` : ''}
@@ -398,15 +401,17 @@ function shopItems(groupIndex) {
     const expires = p?.cosmetics?.[key];
     const collectible = [1,2,4,5].includes(group);
     const specialLocked=specialOnly.has(key)&&profile?.plan?.tier!=='special';
+    const membershipLocked=group===4&&!isPaid();
+    const locked=specialLocked||membershipLocked;
     const included=[1,2,4].includes(group)&&isPaid();
-    const available = !specialLocked&&collectible && (included || (group===2 ? expires : count));
+    const available = !locked&&collectible && (included || (group===2 ? expires : count));
     const equipped = Object.values(p?.equipped || {}).includes(key);
-    const detail = specialLocked?'حصري لعضوية سبيشل':included ? 'مشمول في العضوية' : group===2 && expires
+    const detail = specialLocked?'حصري لعضوية سبيشل':membershipLocked?'متاح مع برو وسبيشل':included ? 'مشمول في العضوية' : group===2 && expires
       ? 'متاح حتى '+new Date(expires).toLocaleDateString('ar') : num(cost)+' نقطة'+(group===2?' · صالح ٣ أيام':count?' · في المخزون '+num(count):'');
-    return `<article class="panel store-item">
+    return `<article class="panel store-item ${locked?'premium-locked':''}">${locked?'<span class="premium-lock">'+icon('lock-keyhole')+(specialLocked?' سبيشل':' برو وسبيشل')+'</span>':''}
       <div class="store-art art-${key}" style="--art:${storeArt[key]}"><span class="product-icon-3d">${icon(symbol)}${icon(symbol)}</span></div>
       <h3>${label}</h3><p class="bodycopy">${desc}</p><span class="gold">${detail}</span>
-      <div class="store-controls">${specialLocked?button('seePlans','عرض سبيشل','secondary','gem'):available?button('equip',equipped?'إلغاء التفعيل':'تفعيل',equipped?'primary':'secondary','',key):`
+      <div class="store-controls">${locked?button('seePlans',specialLocked?'فتح مع سبيشل':'فتح مع العضوية','secondary','lock-keyhole'):available?button('equip',equipped?'إلغاء التفعيل':'تفعيل',equipped?'primary':'secondary','',key):`
         <form class="buy-form" data-item="${key}">
           ${!collectible?`<label>الكمية <span class="quantity-stepper">${button('quantityMinus','−','plain','','')}<input name="quantity" type="number" min="1" step="1" value="1" required inputmode="numeric">${button('quantityPlus','+','plain','','')}</span></label>`:''}
           <button class="secondary" aria-label="شراء ${label}">${icon('shopping-cart')} شراء</button>
