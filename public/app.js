@@ -53,9 +53,6 @@ let activityDay;
 let adminData, adminSearch = '', adminBusy = false, blocked = false;
 let appearanceRequest = 0, appearanceSaveTimer, visualUpdatePending = false;
 let tourIndex=-1,tourPositionTimer;
-const mentorStorageKey='methaq.mentor.mode';
-let mentorMode=localStorage.getItem(mentorStorageKey)||'normal';
-if(!['normal','reduced','off'].includes(mentorMode))mentorMode='normal';
 const guestId = sessionStorage.getItem('methaq-guest') || Array.from(crypto.getRandomValues(new Uint8Array(18)), b=>b.toString(16).padStart(2,'0')).join('');
 sessionStorage.setItem('methaq-guest',guestId);
 const name = new URLSearchParams(location.search).get('name') || 'ضيف ميثاق';
@@ -65,6 +62,38 @@ function toast(message) {
   clearTimeout(noticeTimeout);
   noticeTimeout = setTimeout(() => notice.textContent = '',3800);
 }
+const wethaqGuide=document.querySelector('#wethaq-guide');
+const wethaqCharacter=document.querySelector('#wethaq-character');
+const wethaqBubble=document.querySelector('#wethaq-bubble');
+const wethaqMessage=document.querySelector('#wethaq-message');
+const wethaqRestore=document.querySelector('#wethaq-restore');
+const wethaqTips=['ابدأ بخطوة صغيرة؛ الإنجاز الكبير يأتي بعدها.','حدد مهمة واحدة الآن واترك الباقي لوقته.','رتّب مكانك لدقيقة، وسترتّب أفكارك معها.','الثبات أهم من المثالية؛ أكمل بهدوء.','خذ نفسًا هادئًا ثم ارجع لأول خطوة أمامك.'];
+let wethaqTipIndex=0,wethaqBubbleTimer,wethaqClickTimer,wakeRecognition,wakeListening=false;
+function showWethaq(message,duration=9000){
+  wethaqGuide.hidden=false;wethaqRestore.hidden=true;
+  wethaqMessage.textContent=message;
+  wethaqBubble.classList.add('is-visible');
+  clearTimeout(wethaqBubbleTimer);
+  wethaqBubbleTimer=setTimeout(()=>wethaqBubble.classList.remove('is-visible'),duration);
+  if(wakeRecognition){wakeListening=false;try{wakeRecognition.stop();}catch{/* Already stopped. */}}
+}
+function nextWethaqTip(){showWethaq(wethaqTips[wethaqTipIndex++%wethaqTips.length]);}
+function normalizedSpeech(value){return value.normalize('NFKD').replace(/[\u064B-\u065F\u0670]/g,'').replace(/[^\u0621-\u064A]/g,'');}
+function startVoiceWake(){
+  const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!Recognition){wethaqRestore.hidden=false;toast('الاستدعاء الصوتي غير مدعوم هنا؛ استخدم زر إظهار وِثاق.');return;}
+  wakeRecognition ||= new Recognition();
+  wakeRecognition.lang='ar-SA';wakeRecognition.continuous=true;wakeRecognition.interimResults=false;
+  wakeRecognition.onresult=event=>{for(let index=event.resultIndex;index<event.results.length;index++){const heard=normalizedSpeech(event.results[index][0].transcript);if(heard.includes('بسميثاقي')||heard.includes('بسميثاق')){showWethaq('سمعتك! كيف أساعدك على التركيز؟',12000);break;}}};
+  wakeRecognition.onerror=event=>{wakeListening=false;if(event.error==='not-allowed'||event.error==='service-not-allowed'){wethaqRestore.hidden=false;toast('اسمح بالميكروفون لاستدعاء وِثاق صوتيًا.');}};
+  wakeRecognition.onend=()=>{if(wakeListening&&wethaqGuide.hidden)setTimeout(()=>{try{wakeRecognition.start();}catch{/* Browser is restarting recognition. */}},500);};
+  wakeListening=true;try{wakeRecognition.start();toast('قل «بس ميثاقي» لإظهار وِثاق.');}catch{wethaqRestore.hidden=false;}
+}
+wethaqCharacter.addEventListener('click',()=>{clearTimeout(wethaqClickTimer);wethaqClickTimer=setTimeout(nextWethaqTip,240);});
+wethaqCharacter.addEventListener('dblclick',()=>{clearTimeout(wethaqClickTimer);wethaqGuide.hidden=true;clearTimeout(wethaqBubbleTimer);startVoiceWake();});
+wethaqRestore.addEventListener('click',()=>showWethaq('رجعت لك. اضغط عليّ متى احتجت نصيحة.',12000));
+setTimeout(()=>wethaqBubble.classList.remove('is-visible'),12000);
+setInterval(()=>{if(!wethaqGuide.hidden&&tourIndex<0)nextWethaqTip();},90000);
 const tourSteps=[
   {selector:'.student-profile',title:'حسابك في ميثاق',text:'هنا تظهر هويتك، لقبك، وشارة عضويتك النشطة.'},
   {selector:'.home-timer',title:'حدّد وقت التركيز',text:'حرّك مقبض الدائرة مع عقارب الساعة، أو اختر مدة سريعة أسفلها.'},
@@ -96,7 +125,7 @@ function showTourStep(){
   let layer=document.querySelector('.tour-layer');
   if(!layer){layer=document.createElement('div');layer.className='tour-layer';document.body.append(layer);}
   const last=tourIndex===tourSteps.length-1;
-  layer.innerHTML=`<div class="tour-highlight"></div><section class="tour-card" role="dialog" aria-modal="true" aria-labelledby="tour-title"><button type="button" class="tour-close" data-action="tourSkip" aria-label="تخطي الجولة">×</button><small>${num(tourIndex+1)} من ${num(tourSteps.length)}</small><h2 id="tour-title">${step.title}</h2><p>${step.text}</p><div class="tour-progress">${tourSteps.map((_,index)=>`<i class="${index<=tourIndex?'done':''}"></i>`).join('')}</div><div class="tour-actions">${tourIndex?'<button type="button" class="plain" data-action="tourPrevious">السابق</button>':'<button type="button" class="plain" data-action="tourSkip">تخطي الجولة</button>'}<button type="button" class="primary" data-action="tourNext">${last?'ابدأ الآن':'التالي'}</button></div></section>`;
+  layer.innerHTML=`<div class="tour-highlight"></div><section class="tour-card" role="dialog" aria-modal="true" aria-labelledby="tour-title"><button type="button" class="tour-close" data-action="tourSkip" aria-label="تخطي الجولة">×</button><div class="tour-wethaq"><img src="/assets/wethaq.webp" alt="وِثاق"><span><b>وِثاق يعرّفك بالمنصة</b><small>${num(tourIndex+1)} من ${num(tourSteps.length)}</small></span></div><h2 id="tour-title">${step.title}</h2><p>${step.text}</p><div class="tour-progress">${tourSteps.map((_,index)=>`<i class="${index<=tourIndex?'done':''}"></i>`).join('')}</div><div class="tour-actions">${tourIndex?'<button type="button" class="plain" data-action="tourPrevious">السابق</button>':'<button type="button" class="plain" data-action="tourSkip">تخطي الجولة</button>'}<button type="button" class="primary" data-action="tourNext">${last?'ابدأ الآن':'التالي'}</button></div></section>`;
   target.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'center',inline:'center'});
   clearTimeout(tourPositionTimer);tourPositionTimer=setTimeout(positionTour,260);
 }
@@ -249,8 +278,7 @@ function active() {
   const request = room.pauseRequest?.until > serverNow() && room.pauseRequest;
   return `<div class="inner theme-${profile?.equipped?.theme || 'default'}">${heading('جلسة التركيز','ابقَ حاضرًا حتى نهاية المؤقت.')}<div class="stack">
   <div class="room-code-hero"><span>${icon('hash')} رمز الغرفة</span><strong dir="ltr">${esc(room.code)}</strong>${button('copyCode','نسخ','plain','copy')}</div>
-  <section class="panel preview active-dial" ${decorationStyle()}>${decorationIcon()}${dial('00:00','الوقت المتبقي')}</section>
-  <aside class="mentor-card" id="mentor-card" hidden aria-live="polite"><img src="/assets/wethaq.webp" alt="وِثاق"><div><strong>وِثاق</strong><p id="mentor-message"></p></div></aside>${pair(true)}
+  <section class="panel preview active-dial" ${decorationStyle()}>${decorationIcon()}${dial('00:00','الوقت المتبقي')}</section>${pair(true)}
   ${request ? '<section class="panel actions">'+(request.id===user.id?'بانتظار موافقة شريكك على الاستراحة.':'شريكك يطلب استراحة لمدة 3 دقائق. '+button('answerPause','أوافق','primary','','yes')+button('answerPause','متابعة الجلسة','secondary','','no'))+'</section>':''}
   <section class="panel focus-tools stack">
     ${(inventory.zap||inventory.coffee||inventory.pause||(isPaid()&&!room.premiumPauseUsed))?`<div class="tool-section gift-section"><div class="tool-heading">${icon('gift')}<div><h3>تفاعل مع شريكك</h3><p>لفتة صغيرة تصل إليه فورًا</p></div></div><div class="gift-grid">${inventory.zap?button('signal','صعقة التركيز','secondary gift-action','zap','zap'):''}${inventory.coffee?button('signal','إهداء قهوة','secondary gift-action','coffee','coffee'):''}${inventory.pause||(isPaid()&&!room.premiumPauseUsed)?button('requestPause','استراحة محارب','secondary gift-action','timer-reset'):''}</div></div>`:''}
@@ -264,7 +292,6 @@ function outcome() {
   const succeeded = result.status==='success';
   const left = result.status==='left';
   return `<div class="inner">${heading(succeeded?'أتممتما الميثاق!':left?'انتهت الجلسة بانسحابك':'صمدت حتى النهاية',succeeded?'أحسنتما الالتزام بجلسة التركيز.':left?'يمكنك بدء جلسة جديدة عندما تكون مستعدًا.':'منحتك المنصة '+num(result.reward)+' نقطة تعويض صمود.') }<div class="stack">
-  ${succeeded&&mentorMode!=='off'?`<aside class="mentor-card mentor-success"><img src="/assets/wethaq.webp" alt="وِثاق"><div><strong>وِثاق</strong><p>أحسنت! التزامك اليوم يبني تركيزك للغد.</p></div></aside>`:''}
   <section class="panel stack"><strong class="mint">${icon('sparkles')} ${result.reward>0?'+':''}${num(result.reward)} نقطة</strong>
   ${succeeded ? `<p class="bodycopy">${result.reward===successReward ? num(rewards.achievement)+' نقطة إنجاز · ' : ''}سلسلة الالتزام ${num(profile.streak)} يوم</p><h2>هل أنجزت هدفك؟</h2><div class="actions">${button('result','نعم',result.goal_done===1?'primary':'secondary','','yes')}${button('result','ليس بعد',result.goal_done===0?'primary':'secondary','','no')}</div>
   ${profile.inventory.horn?button('signal','بوق الفوز','secondary','megaphone','horn'):''}` : ''}
@@ -672,7 +699,6 @@ function openAppearance() {
       <input id="glass-range" type="range" min="${glassRange.min}" max="${glassRange.max}" value="${appearance.transparency}" ${isPaid()?'':'disabled aria-describedby="glass-lock"'}>
       ${isPaid()?'':'<p class="bodycopy" id="glass-lock">تحكّم بالشفافية مع برو وسبيشل.</p>'}
     </section>
-    <section class="appearance-card mentor-settings"><div><img src="/assets/wethaq.webp" alt="وِثاق"><span><strong>نصائح وِثاق</strong><small>تحفيز هادئ لا يوقف جلسة التركيز</small></span></div><select id="mentor-mode" aria-label="تكرار نصائح وِثاق"><option value="normal" ${mentorMode==='normal'?'selected':''}>عادي</option><option value="reduced" ${mentorMode==='reduced'?'selected':''}>قليل</option><option value="off" ${mentorMode==='off'?'selected':''}>إيقاف</option></select></section>
     ${button('resetAppearance','استعادة المظهر الافتراضي','secondary','rotate-ccw')}
     ${button('startTour','إعادة الجولة التعريفية','plain','map')}
     ${!isPaid() && room?.phase!=='active' ? button('seePlans','عرض العضويات','secondary','crown') : ''}
@@ -691,12 +717,6 @@ dialog.addEventListener('input',event=>{
   applyGlass();
 });
 dialog.addEventListener('change',async event=>{
-  if(event.target.id==='mentor-mode'){
-    mentorMode=event.target.value;
-    localStorage.setItem(mentorStorageKey,mentorMode);
-    toast(mentorMode==='off'?'تم إيقاف نصائح وِثاق.':'تم حفظ تفضيل نصائح وِثاق.');
-    return;
-  }
   if (event.target.id!=='glass-range' || !isPaid()) return;
   const range = event.target;
   const {mode,palette} = profile.appearance;
@@ -784,6 +804,7 @@ function render(force=false) {
   });
   const phase = !revisited && room?.phase;
   const key = [tab,phase,room?.id,isInvite()].join('|');
+  const changedView=key!==viewKey;
   if (force || key!==viewKey || ['active','lobby','outcome'].includes(phase)) {
     const content = blocked ? '<div class="inner">'+heading('الحساب محظور','تواصل مع مشرف ميثاق للمساعدة.')+'</div>' : tab==='admin'?adminPage():tab==='rooms'?roomsPage():tab==='stats'?stats():tab==='store'?store():tab==='inventory'?inventoryPage():tab==='plans'?plansPage():phase==='lobby'?lobby():phase==='active'?active():phase==='outcome'?outcome():home();
     if (page.dataset.content !== content) {
@@ -798,6 +819,10 @@ function render(force=false) {
       if (selector) page.querySelector(selector)?.focus({preventScroll:true});
     }
     viewKey = key;
+  }
+  if(changedView&&tourIndex<0&&!wethaqGuide.hidden){
+    const advice=phase==='lobby'?'جهّز هدفك واتفق مع شريكك قبل البداية.':phase==='active'?'ركز على الخطوة الحالية فقط؛ أنا هنا من غير ما أقاطعك.':phase==='outcome'?'أحسنت الالتزام. سجّل إنجازك واحتفل بتقدمك.':tab==='rooms'?'رمز الغرفة من 8 أحرف وأرقام، أو اقبل دعوة شريكك مباشرة.':tab==='stats'?'راقب تقدّمك، لكن قارن نفسك بنفسك فقط.':tab==='store'?'اختر ما يساعد تركيزك فعلًا، وليس لمجرد الجمع.':tab==='inventory'?'فعّل العنصر المناسب قبل دخول جلستك القادمة.':tab==='plans'?'راجع المزايا واختر ما تحتاجه فقط.':tab==='admin'?'اضغط على اسم الطالب لتظهر أدوات إدارته.':'اختر وقتًا واقعيًا تستطيع الالتزام به اليوم.';
+    setTimeout(()=>!wethaqGuide.hidden&&showWethaq(advice),350);
   }
   updateClock();
 }
@@ -825,23 +850,6 @@ function updateClock() {
   document.querySelector('#dial-label').textContent = completed?'اكتملت الجلسة':counting?'تبدأ الجلسة خلال':paused?'وقت الاستراحة':'الوقت المتبقي';
   const focusRemaining = counting ? room.endAt-room.startsAt : room.endAt-(paused ? room.pauseUntil : now);
   digits.closest('.dial').style.setProperty('--progress',dialProgress(focusRemaining/60000));
-  updateMentor(counting,paused,value);
-}
-const mentorTips=['ابدأ بالمهمة الأصغر، ثم دع الزخم يكمل عنك.','أبعد المشتتات الآن؛ دقائق التركيز أثمن من المقاطعة.','تنفّس بهدوء، واركز على الخطوة التي أمامك فقط.','قطعت شوطًا جميلًا، حافظ على إيقاعك الهادئ.'];
-function updateMentor(counting,paused,remaining){
-  const card=document.querySelector('#mentor-card');
-  const message=document.querySelector('#mentor-message');
-  if(!card||!message||mentorMode==='off'||counting||paused){if(card)card.hidden=true;return;}
-  const total=room.minutes*60;
-  const elapsed=Math.max(0,total-remaining);
-  const nearStart=elapsed<12;
-  const interval=mentorMode==='reduced'?Math.max(1,Math.floor(total/2)):1500;
-  const milestone=elapsed>=interval&&elapsed%interval<12;
-  const nearEnd=remaining>0&&remaining<=60&&total>=300;
-  if(!nearStart&&!milestone&&!nearEnd){card.hidden=true;return;}
-  const index=nearEnd?3:Math.min(mentorTips.length-1,Math.floor(elapsed/Math.max(1,interval)));
-  message.textContent=nearEnd?'دقيقة أخيرة؛ اختم ما بين يديك بهدوء.':mentorTips[index];
-  card.hidden=false;
 }
 setInterval(updateClock,100);
 function modal(title,text,buttons) {

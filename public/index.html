@@ -6,9 +6,9 @@
   <meta name="theme-color" content="#ffffff">
   <title>ميثاق التركيز | Lock-in Duo</title>
   <link rel="stylesheet" href="/utilities.css?v=20261120-5">
-  <link rel="stylesheet" href="/app.css?v=20261122-1">
+  <link rel="stylesheet" href="/app.css?v=20261123-1">
   <script src="/socket.io/socket.io.js" defer></script>
-  <script type="module" src="/app.js?v=20261122-1"></script>
+  <script type="module" src="/app.js?v=20261123-1"></script>
 </head>
 <body>
   <header class="top"><div class="shell top-inner">
@@ -19,6 +19,11 @@
     <div class="metrics top-metrics" id="account" role="group" aria-label="ملخص حسابك"></div>
   </div></header>
   <main class="shell" id="page"></main>
+  <aside class="wethaq-guide" id="wethaq-guide" aria-live="polite">
+    <button type="button" class="wethaq-character" id="wethaq-character" aria-label="وِثاق، اضغط لنصيحة أو انقر مرتين للإخفاء"><img src="/assets/wethaq.webp" alt="وِثاق"></button>
+    <div class="wethaq-bubble is-visible" id="wethaq-bubble"><strong>وِثاق</strong><p id="wethaq-message">أنا معك في رحلتك. ابدأ بخطوة صغيرة.</p><small>لإخفائي انقر مرتين على الشخصية</small></div>
+  </aside>
+  <button type="button" class="wethaq-restore" id="wethaq-restore" hidden>إظهار وِثاق</button>
   <nav class="dock" aria-label="التنقل الرئيسي">
     <button type="button" data-tab="home" aria-current="page"><i data-icon="house" aria-hidden="true"></i><span>الرئيسية</span></button>
     <button type="button" data-tab="rooms"><i data-icon="door-open" aria-hidden="true"></i><span>انضم لغرفة</span></button>
