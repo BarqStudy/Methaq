@@ -69,17 +69,12 @@ const wethaqBubble=document.querySelector('#wethaq-bubble');
 const wethaqPanelClose=document.querySelector('#wethaq-panel-close');
 const wethaqContent=document.querySelector('#wethaq-content');
 const wethaqRestore=document.querySelector('#wethaq-restore');
-const wethaqTips=['ابدأ بخطوة صغيرة؛ الإنجاز الكبير يأتي بعدها.','حدد مهمة واحدة الآن واترك الباقي لوقته.','رتّب مكانك لدقيقة، وسترتّب أفكارك معها.','الثبات أهم من المثالية؛ أكمل بهدوء.','خذ نفسًا هادئًا ثم ارجع لأول خطوة أمامك.'];
-let wethaqTipIndex=0,wethaqBubbleTimer,wakeRecognition,wakeListening=false,wethaqDragged=false;
-function showWethaq(message,duration=9000){
+let wethaqBubbleTimer,wakeRecognition,wakeListening=false,wethaqDragged=false;
+function restoreWethaq(){
   wethaqGuide.hidden=false;wethaqRestore.hidden=true;
-  wethaqContent.innerHTML='<p>'+esc(message)+'</p>';
-  wethaqBubble.classList.add('is-visible');
-  clearTimeout(wethaqBubbleTimer);
-  wethaqBubbleTimer=setTimeout(()=>wethaqBubble.classList.remove('is-visible'),duration);
+  wethaqBubble.classList.remove('is-visible');
   if(wakeRecognition){wakeListening=false;try{wakeRecognition.stop();}catch{/* Already stopped. */}}
 }
-function nextWethaqTip(){showWethaq(wethaqTips[wethaqTipIndex++%wethaqTips.length]);}
 const wethaqHelp={
   rooms:['الغرف والانضمام','أنشئ الغرفة من الرئيسية، أو افتح «انضم لغرفة» وأدخل الرمز المكوّن من 8 أحرف وأرقام. الدعوات المباشرة تظهر لك أينما كنت في المنصة.'],
   timer:['المؤقت والجلسات','اختر مدة من 5 إلى 180 دقيقة بمضاعفات 5. المدد الطويلة المقفلة تحتاج برو أو سبيشل، ويبدأ المؤقت بعد موافقة الطرفين.'],
@@ -102,7 +97,7 @@ function startVoiceWake(){
   if(!Recognition){wethaqRestore.hidden=false;toast('الاستدعاء الصوتي غير مدعوم هنا؛ استخدم زر إظهار وِثاق.');return;}
   wakeRecognition ||= new Recognition();
   wakeRecognition.lang='ar-SA';wakeRecognition.continuous=true;wakeRecognition.interimResults=false;
-  wakeRecognition.onresult=event=>{for(let index=event.resultIndex;index<event.results.length;index++){const heard=normalizedSpeech(event.results[index][0].transcript);if(heard.includes('ميثاقي')){showWethaq('سمعتك! كيف أساعدك على التركيز؟',12000);break;}}};
+  wakeRecognition.onresult=event=>{for(let index=event.resultIndex;index<event.results.length;index++){const heard=normalizedSpeech(event.results[index][0].transcript);if(heard.includes('ميثاقي')){restoreWethaq();break;}}};
   wakeRecognition.onerror=event=>{wakeListening=false;if(event.error==='not-allowed'||event.error==='service-not-allowed'){wethaqRestore.hidden=false;toast('اسمح بالميكروفون لاستدعاء وِثاق صوتيًا.');}};
   wakeRecognition.onend=()=>{if(wakeListening&&wethaqGuide.hidden)setTimeout(()=>{try{wakeRecognition.start();}catch{/* Browser is restarting recognition. */}},500);};
   wakeListening=true;try{wakeRecognition.start();toast('قل «ميثاقي» لإظهار وِثاق.');}catch{wethaqRestore.hidden=false;}
@@ -111,7 +106,7 @@ wethaqCharacter.addEventListener('click',()=>{if(wethaqDragged){wethaqDragged=fa
 wethaqClose.addEventListener('click',()=>{wethaqGuide.hidden=true;clearTimeout(wethaqBubbleTimer);startVoiceWake();});
 wethaqPanelClose.addEventListener('click',()=>{clearTimeout(wethaqBubbleTimer);wethaqBubble.classList.remove('is-visible');});
 wethaqContent.addEventListener('click',event=>{const question=event.target.closest('[data-wethaq-question]');if(question)answerWethaq(question.dataset.wethaqQuestion);else if(event.target.closest('[data-wethaq-back]'))openWethaqAssistant();});
-wethaqRestore.addEventListener('click',()=>showWethaq('رجعت لك. اضغط عليّ متى احتجت نصيحة.',12000));
+wethaqRestore.addEventListener('click',restoreWethaq);
 const wethaqPositionKey='methaq.wethaq.position';
 function setWethaqPosition(x,y){const width=wethaqCharacter.offsetWidth,height=wethaqCharacter.offsetHeight;const left=Math.max(4,Math.min(innerWidth-width-4,x));wethaqGuide.style.left=left+'px';wethaqGuide.style.top=Math.max(4,Math.min(innerHeight-height-4,y))+'px';wethaqGuide.style.bottom='auto';wethaqGuide.classList.toggle('dock-right',left>innerWidth/2);}
 try{const saved=JSON.parse(localStorage.getItem(wethaqPositionKey));if(Number.isFinite(saved?.x)&&Number.isFinite(saved?.y))setWethaqPosition(saved.x,saved.y);}catch{/* Ignore an invalid saved position. */}
@@ -123,8 +118,6 @@ wethaqCharacter.addEventListener('pointerdown',event=>{
   wethaqCharacter.addEventListener('pointermove',move);wethaqCharacter.addEventListener('pointerup',finish);wethaqCharacter.addEventListener('pointercancel',finish);
 });
 addEventListener('resize',()=>{if(wethaqGuide.style.top){const rect=wethaqCharacter.getBoundingClientRect();setWethaqPosition(rect.left,rect.top);}});
-setTimeout(()=>wethaqBubble.classList.remove('is-visible'),12000);
-setInterval(()=>{if(!wethaqGuide.hidden&&tourIndex<0)nextWethaqTip();},90000);
 const tourSteps=[
   {selector:'.student-profile',title:'حسابك في ميثاق',text:'هنا تظهر هويتك، لقبك، وشارة عضويتك النشطة.'},
   {selector:'.home-timer',title:'حدّد وقت التركيز',text:'حرّك مقبض الدائرة مع عقارب الساعة، أو اختر مدة سريعة أسفلها.'},
@@ -834,7 +827,6 @@ function render(force=false) {
   });
   const phase = !revisited && room?.phase;
   const key = [tab,phase,room?.id,isInvite()].join('|');
-  const changedView=key!==viewKey;
   if (force || key!==viewKey || ['active','lobby','outcome'].includes(phase)) {
     const content = blocked ? '<div class="inner">'+heading('الحساب محظور','تواصل مع مشرف ميثاق للمساعدة.')+'</div>' : tab==='admin'?adminPage():tab==='rooms'?roomsPage():tab==='stats'?stats():tab==='store'?store():tab==='inventory'?inventoryPage():tab==='plans'?plansPage():phase==='lobby'?lobby():phase==='active'?active():phase==='outcome'?outcome():home();
     if (page.dataset.content !== content) {
@@ -849,10 +841,6 @@ function render(force=false) {
       if (selector) page.querySelector(selector)?.focus({preventScroll:true});
     }
     viewKey = key;
-  }
-  if(changedView&&tourIndex<0&&!wethaqGuide.hidden){
-    const advice=phase==='lobby'?'جهّز هدفك واتفق مع شريكك قبل البداية.':phase==='active'?'ركز على الخطوة الحالية فقط؛ أنا هنا من غير ما أقاطعك.':phase==='outcome'?'أحسنت الالتزام. سجّل إنجازك واحتفل بتقدمك.':tab==='rooms'?'رمز الغرفة من 8 أحرف وأرقام، أو اقبل دعوة شريكك مباشرة.':tab==='stats'?'راقب تقدّمك، لكن قارن نفسك بنفسك فقط.':tab==='store'?'اختر ما يساعد تركيزك فعلًا، وليس لمجرد الجمع.':tab==='inventory'?'فعّل العنصر المناسب قبل دخول جلستك القادمة.':tab==='plans'?'راجع المزايا واختر ما تحتاجه فقط.':tab==='admin'?'اضغط على اسم الطالب لتظهر أدوات إدارته.':'اختر وقتًا واقعيًا تستطيع الالتزام به اليوم.';
-    setTimeout(()=>!wethaqGuide.hidden&&showWethaq(advice),350);
   }
   updateClock();
 }
