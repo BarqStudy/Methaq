@@ -101,10 +101,10 @@ function startVoiceWake(){
   if(!Recognition){wethaqRestore.hidden=false;toast('الاستدعاء الصوتي غير مدعوم هنا؛ استخدم زر إظهار وِثاق.');return;}
   wakeRecognition ||= new Recognition();
   wakeRecognition.lang='ar-SA';wakeRecognition.continuous=true;wakeRecognition.interimResults=false;
-  wakeRecognition.onresult=event=>{for(let index=event.resultIndex;index<event.results.length;index++){const heard=normalizedSpeech(event.results[index][0].transcript);if(heard.includes('بسميثاقي')||heard.includes('بسميثاق')){showWethaq('سمعتك! كيف أساعدك على التركيز؟',12000);break;}}};
+  wakeRecognition.onresult=event=>{for(let index=event.resultIndex;index<event.results.length;index++){const heard=normalizedSpeech(event.results[index][0].transcript);if(heard.includes('ميثاقي')){showWethaq('سمعتك! كيف أساعدك على التركيز؟',12000);break;}}};
   wakeRecognition.onerror=event=>{wakeListening=false;if(event.error==='not-allowed'||event.error==='service-not-allowed'){wethaqRestore.hidden=false;toast('اسمح بالميكروفون لاستدعاء وِثاق صوتيًا.');}};
   wakeRecognition.onend=()=>{if(wakeListening&&wethaqGuide.hidden)setTimeout(()=>{try{wakeRecognition.start();}catch{/* Browser is restarting recognition. */}},500);};
-  wakeListening=true;try{wakeRecognition.start();toast('قل «بس ميثاقي» لإظهار وِثاق.');}catch{wethaqRestore.hidden=false;}
+  wakeListening=true;try{wakeRecognition.start();toast('قل «ميثاقي» لإظهار وِثاق.');}catch{wethaqRestore.hidden=false;}
 }
 wethaqCharacter.addEventListener('click',()=>{if(wethaqDragged){wethaqDragged=false;return;}openWethaqAssistant();});
 wethaqClose.addEventListener('click',()=>{wethaqGuide.hidden=true;clearTimeout(wethaqBubbleTimer);startVoiceWake();});
