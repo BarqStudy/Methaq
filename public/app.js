@@ -64,20 +64,37 @@ function toast(message) {
 }
 const wethaqGuide=document.querySelector('#wethaq-guide');
 const wethaqCharacter=document.querySelector('#wethaq-character');
+const wethaqClose=document.querySelector('#wethaq-close');
 const wethaqBubble=document.querySelector('#wethaq-bubble');
-const wethaqMessage=document.querySelector('#wethaq-message');
+const wethaqContent=document.querySelector('#wethaq-content');
 const wethaqRestore=document.querySelector('#wethaq-restore');
 const wethaqTips=['ابدأ بخطوة صغيرة؛ الإنجاز الكبير يأتي بعدها.','حدد مهمة واحدة الآن واترك الباقي لوقته.','رتّب مكانك لدقيقة، وسترتّب أفكارك معها.','الثبات أهم من المثالية؛ أكمل بهدوء.','خذ نفسًا هادئًا ثم ارجع لأول خطوة أمامك.'];
-let wethaqTipIndex=0,wethaqBubbleTimer,wethaqClickTimer,wakeRecognition,wakeListening=false;
+let wethaqTipIndex=0,wethaqBubbleTimer,wakeRecognition,wakeListening=false,wethaqDragged=false;
 function showWethaq(message,duration=9000){
   wethaqGuide.hidden=false;wethaqRestore.hidden=true;
-  wethaqMessage.textContent=message;
+  wethaqContent.innerHTML='<p>'+esc(message)+'</p>';
   wethaqBubble.classList.add('is-visible');
   clearTimeout(wethaqBubbleTimer);
   wethaqBubbleTimer=setTimeout(()=>wethaqBubble.classList.remove('is-visible'),duration);
   if(wakeRecognition){wakeListening=false;try{wakeRecognition.stop();}catch{/* Already stopped. */}}
 }
 function nextWethaqTip(){showWethaq(wethaqTips[wethaqTipIndex++%wethaqTips.length]);}
+const wethaqHelp={
+  rooms:['الغرف والانضمام','أنشئ الغرفة من الرئيسية، أو افتح «انضم لغرفة» وأدخل الرمز المكوّن من 8 أحرف وأرقام. الدعوات المباشرة تظهر لك أينما كنت في المنصة.'],
+  timer:['المؤقت والجلسات','اختر مدة من 5 إلى 180 دقيقة بمضاعفات 5. المدد الطويلة المقفلة تحتاج برو أو سبيشل، ويبدأ المؤقت بعد موافقة الطرفين.'],
+  points:['النقاط والدعوات','تكسب النقاط من الجلسات المكتملة ومن دعوة الأصدقاء. كود دعوتك يمنحك أنت وصديقك 100 نقطة فور انضمامه، بحد أقصى 3 تفعيلات يوميًا.'],
+  plans:['برو وسبيشل','برو عضوية مؤقتة بمزايا التركيز والمنتجات المميزة، وسبيشل تمنح مزايا أوسع ودائمة. العناصر المقفلة توضّح العضوية المطلوبة.'],
+  store:['المتجر والمخزون','المتجر لشراء العناصر بالنقاط، والمخزون لعرض ما تملكه وتفعيله. بعض العناصر مؤقتة ويظهر وقت انتهائها بوضوح.'],
+  session:['داخل الغرفة','يمكنك التفاعل مع شريكك أو طلب استراحة إذا كانت متاحة. إغلاق الجوال لا يخرجك من الغرفة، والانسحاب فقط هو الذي ينهي التزامك.'],
+  stats:['الإحصائيات والسلسلة','صفحة الإحصائيات تعرض دقائق التركيز والجلسات المكتملة وسلسلة الالتزام. السلسلة ترتفع عند إكمال جلساتك بنجاح.'],
+  account:['الحساب والمظهر','من زر المظهر تستطيع تغيير الوضع والألوان والشفافية واستعادة الشكل الافتراضي. عضويتك وشارتك تظهران بجانب اسمك.']
+};
+function openWethaqAssistant(){
+  wethaqGuide.hidden=false;wethaqRestore.hidden=true;clearTimeout(wethaqBubbleTimer);
+  wethaqContent.innerHTML='<p>وش حاب تعرف عن ميثاق؟</p><div class="wethaq-help-grid">'+Object.entries(wethaqHelp).map(([key,[label]])=>`<button type="button" data-wethaq-question="${key}">${label}</button>`).join('')+'</div>';
+  wethaqBubble.classList.add('is-visible');
+}
+function answerWethaq(key){const item=wethaqHelp[key];if(!item)return;wethaqContent.innerHTML=`<h4>${item[0]}</h4><p>${item[1]}</p><button type="button" class="wethaq-back" data-wethaq-back>رجوع للأسئلة</button>`;}
 function normalizedSpeech(value){return value.normalize('NFKD').replace(/[\u064B-\u065F\u0670]/g,'').replace(/[^\u0621-\u064A]/g,'');}
 function startVoiceWake(){
   const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;
@@ -89,9 +106,21 @@ function startVoiceWake(){
   wakeRecognition.onend=()=>{if(wakeListening&&wethaqGuide.hidden)setTimeout(()=>{try{wakeRecognition.start();}catch{/* Browser is restarting recognition. */}},500);};
   wakeListening=true;try{wakeRecognition.start();toast('قل «بس ميثاقي» لإظهار وِثاق.');}catch{wethaqRestore.hidden=false;}
 }
-wethaqCharacter.addEventListener('click',()=>{clearTimeout(wethaqClickTimer);wethaqClickTimer=setTimeout(nextWethaqTip,240);});
-wethaqCharacter.addEventListener('dblclick',()=>{clearTimeout(wethaqClickTimer);wethaqGuide.hidden=true;clearTimeout(wethaqBubbleTimer);startVoiceWake();});
+wethaqCharacter.addEventListener('click',()=>{if(wethaqDragged){wethaqDragged=false;return;}openWethaqAssistant();});
+wethaqClose.addEventListener('click',()=>{wethaqGuide.hidden=true;clearTimeout(wethaqBubbleTimer);startVoiceWake();});
+wethaqContent.addEventListener('click',event=>{const question=event.target.closest('[data-wethaq-question]');if(question)answerWethaq(question.dataset.wethaqQuestion);else if(event.target.closest('[data-wethaq-back]'))openWethaqAssistant();});
 wethaqRestore.addEventListener('click',()=>showWethaq('رجعت لك. اضغط عليّ متى احتجت نصيحة.',12000));
+const wethaqPositionKey='methaq.wethaq.position';
+function setWethaqPosition(x,y){const width=wethaqCharacter.offsetWidth,height=wethaqCharacter.offsetHeight;const left=Math.max(4,Math.min(innerWidth-width-4,x));wethaqGuide.style.left=left+'px';wethaqGuide.style.top=Math.max(4,Math.min(innerHeight-height-4,y))+'px';wethaqGuide.style.bottom='auto';wethaqGuide.classList.toggle('dock-right',left>innerWidth/2);}
+try{const saved=JSON.parse(localStorage.getItem(wethaqPositionKey));if(Number.isFinite(saved?.x)&&Number.isFinite(saved?.y))setWethaqPosition(saved.x,saved.y);}catch{/* Ignore an invalid saved position. */}
+wethaqCharacter.addEventListener('pointerdown',event=>{
+  const rect=wethaqCharacter.getBoundingClientRect(),offsetX=event.clientX-rect.left,offsetY=event.clientY-rect.top,startX=event.clientX,startY=event.clientY;
+  wethaqDragged=false;wethaqCharacter.setPointerCapture(event.pointerId);
+  const move=moveEvent=>{if(Math.hypot(moveEvent.clientX-startX,moveEvent.clientY-startY)<6&&!wethaqDragged)return;wethaqDragged=true;wethaqGuide.classList.add('is-dragging');wethaqBubble.classList.remove('is-visible');setWethaqPosition(moveEvent.clientX-offsetX,moveEvent.clientY-offsetY);};
+  const finish=()=>{wethaqCharacter.removeEventListener('pointermove',move);wethaqCharacter.removeEventListener('pointerup',finish);wethaqCharacter.removeEventListener('pointercancel',finish);wethaqGuide.classList.remove('is-dragging');if(wethaqDragged){const rect=wethaqCharacter.getBoundingClientRect();localStorage.setItem(wethaqPositionKey,JSON.stringify({x:Math.round(rect.left),y:Math.round(rect.top)}));}};
+  wethaqCharacter.addEventListener('pointermove',move);wethaqCharacter.addEventListener('pointerup',finish);wethaqCharacter.addEventListener('pointercancel',finish);
+});
+addEventListener('resize',()=>{if(wethaqGuide.style.top){const rect=wethaqCharacter.getBoundingClientRect();setWethaqPosition(rect.left,rect.top);}});
 setTimeout(()=>wethaqBubble.classList.remove('is-visible'),12000);
 setInterval(()=>{if(!wethaqGuide.hidden&&tourIndex<0)nextWethaqTip();},90000);
 const tourSteps=[
@@ -700,7 +729,6 @@ function openAppearance() {
       ${isPaid()?'':'<p class="bodycopy" id="glass-lock">تحكّم بالشفافية مع برو وسبيشل.</p>'}
     </section>
     ${button('resetAppearance','استعادة المظهر الافتراضي','secondary','rotate-ccw')}
-    ${button('startTour','إعادة الجولة التعريفية','plain','map')}
     ${!isPaid() && room?.phase!=='active' ? button('seePlans','عرض العضويات','secondary','crown') : ''}
     ${adminAccessDetails()}</div>`;
   if (!dialog.open) dialog.showModal();
@@ -951,7 +979,6 @@ document.addEventListener('click',event=>{
     if(tourIndex>=tourSteps.length-1)endTour(true);else{tourIndex++;showTourStep();}
   } else if(action==='tourPrevious'){tourIndex=Math.max(0,tourIndex-1);showTourStep();}
   else if(action==='tourSkip')endTour(true);
-  else if(action==='startTour')startTour();
   else if (action==='duration') {
     if (!durationAllowed(+value)) return premiumDuration(+value);
     chosen=+value; render(true);
