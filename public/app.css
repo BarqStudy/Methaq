@@ -833,3 +833,4 @@ select{appearance:none;-webkit-appearance:none;min-height:42px;padding:8px 13px 
 @media(max-width:380px){.wethaq-character{width:68px;height:78px}.wethaq-bubble{width:min(210px,calc(100vw - 84px));margin-bottom:34px}.wethaq-bubble p{font-size:10px}}
 @media(prefers-reduced-motion:reduce){.wethaq-character,.wethaq-bubble{transition:none}}
 .wethaq-help-grid button,.wethaq-back{font:inherit;font-size:9px;font-weight:600;line-height:1.35}
+.wethaq-panel-close{position:absolute;top:7px;left:8px;display:grid;place-items:center;width:25px;height:25px;padding:0;border:0;border-radius:8px;background:color-mix(in srgb,var(--muted) 10%,transparent);color:var(--muted);font-size:18px;line-height:1}.wethaq-panel-close:hover{background:color-mix(in srgb,var(--muted) 18%,transparent);color:var(--text)}

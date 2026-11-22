@@ -66,6 +66,7 @@ const wethaqGuide=document.querySelector('#wethaq-guide');
 const wethaqCharacter=document.querySelector('#wethaq-character');
 const wethaqClose=document.querySelector('#wethaq-close');
 const wethaqBubble=document.querySelector('#wethaq-bubble');
+const wethaqPanelClose=document.querySelector('#wethaq-panel-close');
 const wethaqContent=document.querySelector('#wethaq-content');
 const wethaqRestore=document.querySelector('#wethaq-restore');
 const wethaqTips=['ابدأ بخطوة صغيرة؛ الإنجاز الكبير يأتي بعدها.','حدد مهمة واحدة الآن واترك الباقي لوقته.','رتّب مكانك لدقيقة، وسترتّب أفكارك معها.','الثبات أهم من المثالية؛ أكمل بهدوء.','خذ نفسًا هادئًا ثم ارجع لأول خطوة أمامك.'];
@@ -108,6 +109,7 @@ function startVoiceWake(){
 }
 wethaqCharacter.addEventListener('click',()=>{if(wethaqDragged){wethaqDragged=false;return;}openWethaqAssistant();});
 wethaqClose.addEventListener('click',()=>{wethaqGuide.hidden=true;clearTimeout(wethaqBubbleTimer);startVoiceWake();});
+wethaqPanelClose.addEventListener('click',()=>{clearTimeout(wethaqBubbleTimer);wethaqBubble.classList.remove('is-visible');});
 wethaqContent.addEventListener('click',event=>{const question=event.target.closest('[data-wethaq-question]');if(question)answerWethaq(question.dataset.wethaqQuestion);else if(event.target.closest('[data-wethaq-back]'))openWethaqAssistant();});
 wethaqRestore.addEventListener('click',()=>showWethaq('رجعت لك. اضغط عليّ متى احتجت نصيحة.',12000));
 const wethaqPositionKey='methaq.wethaq.position';
