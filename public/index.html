@@ -6,9 +6,9 @@
   <meta name="theme-color" content="#ffffff">
   <title>ميثاق التركيز | Lock-in Duo</title>
   <link rel="stylesheet" href="/utilities.css?v=20261120-5">
-  <link rel="stylesheet" href="/app.css?v=20261123-3">
+  <link rel="stylesheet" href="/app.css?v=20261121-18">
   <script src="/socket.io/socket.io.js" defer></script>
-  <script type="module" src="/app.js?v=20261123-5"></script>
+  <script type="module" src="/app.js?v=20261121-22"></script>
 </head>
 <body>
   <header class="top"><div class="shell top-inner">
@@ -19,12 +19,6 @@
     <div class="metrics top-metrics" id="account" role="group" aria-label="ملخص حسابك"></div>
   </div></header>
   <main class="shell" id="page"></main>
-  <aside class="wethaq-guide" id="wethaq-guide" aria-live="polite">
-    <button type="button" class="wethaq-close" id="wethaq-close" aria-label="إخفاء وِثاق">×</button>
-    <button type="button" class="wethaq-character" id="wethaq-character" aria-label="افتح مساعد وِثاق أو اسحبه لتغيير مكانه"><img src="/assets/wethaq.webp" alt="وِثاق"></button>
-    <div class="wethaq-bubble" id="wethaq-bubble"><button type="button" class="wethaq-panel-close" id="wethaq-panel-close" aria-label="إغلاق نافذة المساعد">×</button><strong>مساعد وِثاق</strong><div id="wethaq-content"><p id="wethaq-message">اضغط عليّ واسألني عن أي قسم في المنصة.</p></div><small>تقدر تسحب الشخصية لأي مكان في الشاشة</small></div>
-  </aside>
-  <button type="button" class="wethaq-restore" id="wethaq-restore" hidden>إظهار وِثاق</button>
   <nav class="dock" aria-label="التنقل الرئيسي">
     <button type="button" data-tab="home" aria-current="page"><i data-icon="house" aria-hidden="true"></i><span>الرئيسية</span></button>
     <button type="button" data-tab="rooms"><i data-icon="door-open" aria-hidden="true"></i><span>انضم لغرفة</span></button>
