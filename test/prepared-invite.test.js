@@ -40,10 +40,12 @@ test('runs Telegram invitations, admin changes, custom appearance, and referral 
   await command(host,'refreshProfile');
   const [hostDetails] = await hostProfile;
   assert.equal(hostDetails.adminAccess,'enabled');
-  const savedNote=await command(host,'notesAdd',{subject:'الأحياء',chapter:'Chapter 2',image:'data:image/webp;base64,AAAA'});
+  const savedFolder=await command(host,'notesFolderAdd',{subject:'الأحياء',chapter:'Chapter 2'});
+  const savedNote=await command(host,'notesAdd',{folder:savedFolder.folder.id,image:'data:image/webp;base64,AAAA'});
   assert.equal(savedNote.note.subject,'الأحياء');
   const noteList=await command(host,'notesList');
   assert.equal(noteList.notes[0].chapter,'Chapter 2');
+  assert.equal(noteList.folders[0].subject,'الأحياء');
   assert.deepEqual(await command(host,'notesDelete',{note:savedNote.note.id}),{ok:true});
   assert.equal((await command(host,'notesList')).notes.length,0);
   const referral = hostDetails.referrals.code;

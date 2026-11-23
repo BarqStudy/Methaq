@@ -56,6 +56,8 @@ await db.exec(`
   CREATE TABLE IF NOT EXISTS pending_direct_invites(recipient TEXT PRIMARY KEY,room TEXT NOT NULL,sender TEXT NOT NULL,minutes INTEGER NOT NULL,created_at BIGINT NOT NULL);
   CREATE TABLE IF NOT EXISTS study_notes(id TEXT PRIMARY KEY,player TEXT NOT NULL,subject TEXT NOT NULL,chapter TEXT NOT NULL,image_data TEXT NOT NULL,created_at BIGINT NOT NULL);
   CREATE INDEX IF NOT EXISTS study_notes_player_created ON study_notes(player,created_at);
+  CREATE TABLE IF NOT EXISTS note_folders(id TEXT PRIMARY KEY,player TEXT NOT NULL,subject TEXT NOT NULL,chapter TEXT NOT NULL,created_at BIGINT NOT NULL,UNIQUE(player,subject,chapter));
+  CREATE INDEX IF NOT EXISTS note_folders_player ON note_folders(player,created_at);
 `);
 try{await db.exec('ALTER TABLE players ADD COLUMN tour_seen INTEGER NOT NULL DEFAULT 0');}catch(error){if(!/duplicate|already exists/i.test(error.message))throw error;}
 try{await db.exec('ALTER TABLE referrals ADD COLUMN created_at BIGINT NOT NULL DEFAULT 0');}catch(error){if(!/duplicate|already exists/i.test(error.message))throw error;}
@@ -361,11 +363,18 @@ io.on('connection', async(socket) => {
       try { const result=await fn(payload??{}); ack(result&&typeof result==='object'?{ok:true,...result}:{ok:true}); } catch (error) { console.error(event,error);ack({ error:error.message }); }
     });
   }
-  action('notesList',async()=>({notes:await db.all('SELECT id,subject,chapter,image_data,created_at FROM study_notes WHERE player=? ORDER BY created_at DESC',id)}));
-  action('notesAdd',async({subject,chapter,image})=>{
-    if(!telegramIdPattern.test(id))fail('افتح ميثاق من تليجرام لحفظ ملاحظاتك.');
+  action('notesList',async()=>({notes:await db.all('SELECT id,subject,chapter,image_data,created_at FROM study_notes WHERE player=? ORDER BY created_at DESC',id),folders:await db.all('SELECT id,subject,chapter,created_at FROM note_folders WHERE player=? ORDER BY subject,chapter',id)}));
+  action('notesFolderAdd',async({subject,chapter})=>{
+    if(!telegramIdPattern.test(id))fail('افتح ميثاق من تليجرام لإنشاء مجلد.');
     subject=typeof subject==='string'?subject.trim().slice(0,60):'';chapter=typeof chapter==='string'?chapter.trim().slice(0,80):'';
     if(!subject||!chapter)fail('اكتب اسم المادة والشابتر.');
+    const existing=await query('SELECT id,subject,chapter,created_at FROM note_folders WHERE player=? AND subject=? AND chapter=?',id,subject,chapter);if(existing)return {folder:existing};
+    const folder={id:randomUUID(),subject,chapter,created_at:clock.now()};await run('INSERT INTO note_folders(id,player,subject,chapter,created_at) VALUES(?,?,?,?,?)',folder.id,id,subject,chapter,folder.created_at);return {folder};
+  });
+  action('notesAdd',async({folder,quick,image})=>{
+    if(!telegramIdPattern.test(id))fail('افتح ميثاق من تليجرام لحفظ ملاحظاتك.');
+    let subject='إضافات سريعة',chapter='غير مصنف';
+    if(!quick){const target=typeof folder==='string'&&await query('SELECT subject,chapter FROM note_folders WHERE id=? AND player=?',folder,id);if(!target)fail('اختر مجلدًا صالحًا.');({subject,chapter}=target);}
     if(typeof image!=='string'||image.length>1200000||!/^data:image\/(?:webp|jpeg|png);base64,[A-Za-z0-9+/=]+$/.test(image))fail('الصورة غير صالحة أو حجمها كبير.');
     const note={id:randomUUID(),subject,chapter,image_data:image,created_at:clock.now()};
     await run('INSERT INTO study_notes(id,player,subject,chapter,image_data,created_at) VALUES(?,?,?,?,?,?)',note.id,id,subject,chapter,image,note.created_at);
