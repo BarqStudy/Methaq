@@ -773,6 +773,7 @@ app.use((req,res,next)=>{
   next();
 });
 app.use('/icons',express.static('node_modules/lucide-static/icons'));
+app.use('/vendor/jspdf',express.static('node_modules/jspdf/dist'));
 app.use('/fonts',express.static('node_modules/@fontsource/ibm-plex-sans-arabic/files'));
 app.use('/fonts',express.static('node_modules/@fontsource/ibm-plex-sans-arabic'));
 app.use(express.static('public'));

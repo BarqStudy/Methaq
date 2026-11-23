@@ -16,6 +16,7 @@
   "dependencies": {
     "@fontsource/ibm-plex-sans-arabic": "^5.2.8",
     "express": "^5.1.0",
+    "jspdf": "^3.0.4",
     "lucide-static": "^0.468.0",
     "pg": "^8.23.1",
     "socket.io": "^4.8.1",
