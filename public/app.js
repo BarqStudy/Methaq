@@ -58,10 +58,24 @@ sessionStorage.setItem('methaq-guest',guestId);
 const name = new URLSearchParams(location.search).get('name') || 'ضيف ميثاق';
 
 function toast(message) {
-  notice.textContent = message;
   clearTimeout(noticeTimeout);
-  noticeTimeout = setTimeout(() => notice.textContent = '',3800);
+  notice.innerHTML=`<button type="button" class="notice-close" aria-label="إغلاق التنبيه">×</button><span class="notice-icon">${icon('circle-check')}</span><span class="notice-message"></span><span class="notice-progress" aria-hidden="true"></span>`;
+  notice.querySelector('.notice-message').textContent=message;
+  notice.classList.remove('is-held');
+  noticeRemaining=3000;
+  armNotice();
 }
+let noticeRemaining=3000,noticeStarted=0;
+function clearNotice(){clearTimeout(noticeTimeout);notice.innerHTML='';notice.classList.remove('is-held');}
+function armNotice(){noticeStarted=performance.now();notice.style.setProperty('--notice-duration',noticeRemaining+'ms');noticeTimeout=setTimeout(clearNotice,noticeRemaining);}
+notice.addEventListener('pointerdown',event=>{
+  if(!notice.textContent||event.target.closest('.notice-close'))return;
+  noticeRemaining=Math.max(0,noticeRemaining-(performance.now()-noticeStarted));
+  clearTimeout(noticeTimeout);notice.classList.add('is-held');notice.setPointerCapture?.(event.pointerId);
+});
+const resumeNotice=()=>{if(!notice.classList.contains('is-held')||!notice.textContent)return;notice.classList.remove('is-held');armNotice();};
+notice.addEventListener('pointerup',resumeNotice);notice.addEventListener('pointercancel',resumeNotice);
+notice.addEventListener('click',event=>{if(event.target.closest('.notice-close'))clearNotice();});
 const tourSteps=[
   {selector:'.student-profile',title:'حسابك في ميثاق',text:'هنا تظهر هويتك، لقبك، وشارة عضويتك النشطة.'},
   {selector:'.home-timer',title:'حدّد وقت التركيز',text:'حرّك مقبض الدائرة مع عقارب الساعة، أو اختر مدة سريعة أسفلها.'},
