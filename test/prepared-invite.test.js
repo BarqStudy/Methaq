@@ -45,6 +45,8 @@ test('runs Telegram invitations, admin changes, custom appearance, and referral 
   assert.equal(savedNote.note.subject,'الأحياء');
   const noteList=await command(host,'notesList');
   assert.equal(noteList.notes[0].chapter,'Chapter 2');
+  assert.equal(noteList.notes[0].image_data,undefined);
+  assert.equal((await command(host,'notesImage',{note:savedNote.note.id})).image,'data:image/webp;base64,AAAA');
   assert.equal(noteList.folders[0].subject,'الأحياء');
   assert.deepEqual(await command(host,'notesDelete',{note:savedNote.note.id}),{ok:true});
   assert.equal((await command(host,'notesList')).notes.length,0);

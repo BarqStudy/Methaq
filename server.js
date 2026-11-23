@@ -363,7 +363,8 @@ io.on('connection', async(socket) => {
       try { const result=await fn(payload??{}); ack(result&&typeof result==='object'?{ok:true,...result}:{ok:true}); } catch (error) { console.error(event,error);ack({ error:error.message }); }
     });
   }
-  action('notesList',async()=>({notes:await db.all('SELECT id,subject,chapter,image_data,created_at FROM study_notes WHERE player=? ORDER BY created_at DESC',id),folders:await db.all('SELECT id,subject,chapter,created_at FROM note_folders WHERE player=? ORDER BY subject,chapter',id)}));
+  action('notesList',async()=>({notes:await db.all('SELECT id,subject,chapter,created_at FROM study_notes WHERE player=? ORDER BY created_at DESC',id),folders:await db.all('SELECT id,subject,chapter,created_at FROM note_folders WHERE player=? ORDER BY subject,chapter',id)}));
+  action('notesImage',async({note})=>{const row=typeof note==='string'&&await query('SELECT image_data FROM study_notes WHERE id=? AND player=?',note,id);if(!row)fail('الصورة غير موجودة.');return {image:row.image_data};});
   action('notesFolderAdd',async({subject,chapter})=>{
     if(!telegramIdPattern.test(id))fail('افتح ميثاق من تليجرام لإنشاء مجلد.');
     subject=typeof subject==='string'?subject.trim().slice(0,60):'';chapter=typeof chapter==='string'?chapter.trim().slice(0,80):'';
@@ -373,7 +374,7 @@ io.on('connection', async(socket) => {
   });
   action('notesAdd',async({folder,quick,image})=>{
     if(!telegramIdPattern.test(id))fail('افتح ميثاق من تليجرام لحفظ ملاحظاتك.');
-    let subject='إضافات سريعة',chapter='غير مصنف';
+    let subject='الإضافة السريعة',chapter='غير مصنف';
     if(!quick){const target=typeof folder==='string'&&await query('SELECT subject,chapter FROM note_folders WHERE id=? AND player=?',folder,id);if(!target)fail('اختر مجلدًا صالحًا.');({subject,chapter}=target);}
     if(typeof image!=='string'||image.length>1200000||!/^data:image\/(?:webp|jpeg|png);base64,[A-Za-z0-9+/=]+$/.test(image))fail('الصورة غير صالحة أو حجمها كبير.');
     const note={id:randomUUID(),subject,chapter,image_data:image,created_at:clock.now()};
