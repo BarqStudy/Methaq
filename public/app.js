@@ -51,6 +51,7 @@ const isPaid = () => ['pro','special'].includes(profile?.plan?.tier);
 let purchaseBusy = false;
 let activityDay;
 let adminData, adminSearch = '', adminBusy = false, blocked = false;
+let notesData=null,notesBusy=false;
 let appearanceRequest = 0, appearanceSaveTimer, visualUpdatePending = false;
 let tourIndex=-1,tourPositionTimer;
 const guestId = sessionStorage.getItem('methaq-guest') || Array.from(crypto.getRandomValues(new Uint8Array(18)), b=>b.toString(16).padStart(2,'0')).join('');
@@ -81,7 +82,7 @@ const tourSteps=[
   {selector:'.home-timer',title:'حدّد وقت التركيز',text:'حرّك مقبض الدائرة مع عقارب الساعة، أو اختر مدة سريعة أسفلها.'},
   {selector:'#create-session-form',title:'أنشئ غرفة تركيز',text:'الهدف اختياري. أنشئ الغرفة ثم أرسل رمزها أو دعوتها لشريكك.'},
   {selector:'[data-tab="rooms"]',title:'انضم إلى شريكك',text:'استخدم صفحة الغرف لإدخال الرمز أو قبول دعوة مباشرة.'},
-  {selector:'[data-tab="store"]',title:'المتجر والثيمات',text:'رصيد نقاطك، العناصر، والثيمات كلها موجودة داخل المتجر.'}
+  {selector:'[data-tab="notes"]',title:'ملاحظاتك مرتبة',text:'احفظ صور السبورة داخل المادة والشابتر، وستجد تاريخ الرفع الميلادي والهجري معها.'}
 ];
 const tourStorageKey=()=>`methaq.tour.v1.${user?.id||guestId}`;
 function positionTour(){
@@ -415,15 +416,16 @@ function inventoryPage(){
   return `<div class="inner store-page">${heading('المخزون','كل مشترياتك وعناصرك في مكان واحد.')}
     ${owned.length?`<div class="store-grid inventory-grid">${owned.map(([key,[group,label,,symbol,desc]])=>{const count=profile?.inventory?.[key]||0;const equipped=Object.values(profile?.equipped||{}).includes(key);const expiry=profile?.cosmetics?.[key];return `<article class="panel inventory-item"><div class="inventory-visual" style="--art:${storeArt[key]}"><span class="product-icon-3d">${icon(symbol)}${icon(symbol)}</span></div><div class="inventory-copy"><h3>${label}</h3><p class="bodycopy">${desc}</p><span class="tag">${equipped?'مفعّل':expiry?'متاح حتى '+new Date(expiry).toLocaleDateString('ar-SA-u-nu-latn'):num(count)+' في المخزون'}</span></div>${[1,2,4,5].includes(group)?button('equip',equipped?'إلغاء التفعيل':'استخدم','secondary','power',key):button('useInventory','استخدم قطعة واحدة','primary','play',key)}</article>`;}).join('')}</div>`:'<section class="panel empty-state">'+icon('package-open')+'<h2>مخزونك فارغ</h2><p class="bodycopy">ستظهر هنا العناصر التي تشتريها من المتجر.</p></section>'}</div>`;
 }
-function themes() {
-  const current = specialties[profile?.equipped?.decoration];
-  return `<div class="inner store-page">${heading('الثيمات','غيّر لون المنصة ووضع العرض، واختر ثيم تخصصك.')}
-  <section class="panel appearance-overview"><div><h2>الألوان ووضع العرض</h2>
-    <p class="bodycopy">${profile?.appearance?.mode==='dark'?'ليلي':'نهاري'} · ${palettes[profile?.appearance?.palette || 'emerald'].label}</p></div>
-    ${button('appearanceMenu','تعديل المظهر','secondary','palette')}</section>
-  <h2 class="specialty-title">ثيمات التخصصات</h2>${current?'<p class="bodycopy">الثيم المفعّل · '+current[0]+'</p>':''}
-  ${shopItems(4)}</div>`;
+const gregorianNoteDate=value=>new Intl.DateTimeFormat('ar-SA-u-ca-gregory-nu-latn',{dateStyle:'long'}).format(new Date(Number(value)));
+const hijriNoteDate=value=>new Intl.DateTimeFormat('ar-SA-u-ca-islamic-umalqura-nu-latn',{dateStyle:'long'}).format(new Date(Number(value)));
+async function loadNotes(){if(notesBusy||!socket?.connected)return;notesBusy=true;try{const result=await socket.timeout(8000).emitWithAck('notesList',{});if(result.error)throw new Error(result.error);notesData=result.notes||[];}catch(error){toast(error.message||'تعذّر تحميل الملاحظات.');notesData=[];}finally{notesBusy=false;if(tab==='notes')render(true);}}
+function notesPage(){
+  const groups=new Map();for(const note of notesData||[]){if(!groups.has(note.subject))groups.set(note.subject,new Map());const chapters=groups.get(note.subject);if(!chapters.has(note.chapter))chapters.set(note.chapter,[]);chapters.get(note.chapter).push(note);}
+  return `<div class="inner notes-page">${heading('الملاحظات','صور السبورة مرتبة حسب المادة والشابتر، من دون أن تضيع في ألبوم الجوال.')}
+    <form id="note-upload-form" class="panel note-upload stack"><div class="note-upload-title"><span class="tile-icon">${icon('camera')}</span><div><h2>إضافة صور</h2><p class="bodycopy">يُضاف تاريخ الرفع الميلادي والهجري تلقائيًا.</p></div></div><div class="note-fields"><label class="field">اسم المادة<input name="subject" maxlength="60" placeholder="مثال: علم الأدوية" required></label><label class="field">الشابتر<input name="chapter" maxlength="80" placeholder="مثال: Chapter 3" required></label></div><label class="note-file">${icon('image-up')}<span>اختر صور السبورة</span><input name="images" type="file" accept="image/jpeg,image/png,image/webp" multiple required></label><button class="primary wide">${icon('upload')} حفظ الصور</button></form>
+    <div class="notes-folders">${notesData===null?'<section class="panel">جارٍ تحميل ملاحظاتك…</section>':[...groups].map(([subject,chapters])=>`<section class="panel subject-folder"><div class="folder-title"><span>${icon('folder')}<strong>${esc(subject)}</strong></span><small>${num([...chapters.values()].flat().length)} صورة</small></div>${[...chapters].map(([chapter,notes])=>`<details class="chapter-folder" open><summary>${icon('book-open')}<strong>${esc(chapter)}</strong><small>${num(notes.length)}</small></summary><div class="note-grid">${notes.map(note=>`<article class="note-card"><img src="${note.image_data}" alt="ملاحظة ${esc(subject)} - ${esc(chapter)}" loading="lazy"><div><time>${gregorianNoteDate(note.created_at)}</time><small>${hijriNoteDate(note.created_at)}</small></div>${button('confirmDeleteNote','حذف','plain','trash-2',note.id)}</article>`).join('')}</div></details>`).join('')}</section>`).join('')||'<section class="panel empty-state">'+icon('images')+'<h2>لا توجد ملاحظات بعد</h2><p class="bodycopy">ارفع أول صورة وحدد مادتها وشابترها.</p></section>'}</div></div>`;
 }
+function settingsPage(){const cards=Object.entries(specialties).map(([key,[label,symbol,first,second]])=>{const selected=profile?.equipped?.decoration===key;const locked=(key==='eternal'&&profile?.plan?.tier!=='special')||!isPaid();return `<button type="button" class="theme-gallery-card specialty-choice" data-action="${locked?'seePlans':'equip'}" data-value="${key}" aria-pressed="${selected}" style="--theme-a:${first};--theme-b:${second}"><span class="theme-status">${locked?icon('lock-keyhole'):''}</span><span class="theme-mini specialty-mini">${icon(symbol)}</span><strong>${label}</strong>${locked?'<small>مميّز</small>':''}</button>`;}).join('');return `<div class="inner settings-page">${heading('الإعدادات','المظهر وثيمات تخصصك في مكان واحد.')}<section class="panel appearance-overview"><div><h2>المظهر والألوان</h2><p class="bodycopy">${profile?.appearance?.mode==='dark'?'ليلي':'نهاري'} · ${palettes[profile?.appearance?.palette||'emerald'].label}</p></div>${button('appearanceMenu','تخصيص المظهر','secondary','sliders-horizontal')}</section><section class="panel gallery-section"><div class="gallery-title"><h2>ثيمات التخصصات</h2><small>اختر هوية تناسب تخصصك</small></div><div class="theme-gallery-grid specialty-gallery">${cards}</div></section></div>`;}
 function shopItems(groupIndex) {
   const p = profile;
   return `<p class="bodycopy section-rule">${icon('layers')} ${[1,2,4,5].includes(groupIndex)?'في هذا القسم يُفعّل منتج واحد فقط.':'في هذا القسم يُستخدم منتج واحد في كل مرة.'}</p>
@@ -658,13 +660,6 @@ function openAppearance() {
   appearanceOpen = true;
   const appearance = profile?.appearance || defaultAppearance;
   const modes={light:['أبيض','sun','#f5f5f2','#ffffff'],dark:['داكن','moon','#111316','#292d33']};
-  const specialtyCards=Object.entries(specialties).map(([key,[label,symbol,first,second]])=>{
-    const selected=profile?.equipped?.decoration===key;
-    const locked=(key==='eternal'&&profile?.plan?.tier!=='special')||(!isPaid());
-    return `<button type="button" class="theme-gallery-card specialty-choice" data-action="${locked?'seePlans':'equip'}" data-value="${key}" aria-pressed="${selected}" style="--theme-a:${first};--theme-b:${second}">
-      <span class="theme-status">${locked?icon('lock-keyhole'):''}</span>
-      <span class="theme-mini specialty-mini">${icon(symbol)}</span><strong>${label}</strong>${locked?'<small>مميّز</small>':''}</button>`;
-  }).join('');
   dialog.innerHTML = `<div class="stack appearance-gallery"><div class="appearance-head"><div><small>تخصيص المنصة</small><h2>المظهر</h2></div>${button('close','إغلاق','plain','x')}</div>
     <section class="appearance-card gallery-section"><h3>وضع العرض</h3><div class="theme-gallery-grid">${Object.entries(modes).map(([mode,[label,symbol,base,layer]])=>
       `<button type="button" class="theme-gallery-card mode-choice" data-action="mode" data-value="${mode}" aria-pressed="${mode===appearance.mode}" style="--theme-a:${base};--theme-b:${layer}"><span class="theme-status"></span><span class="theme-mini">${icon(symbol)}</span><strong>${label}</strong></button>`).join('')}</div></section>
@@ -674,7 +669,6 @@ function openAppearance() {
       const fill=key==='custom'?customFill(appearance.custom):palette.swatch;
       return `<button type="button" class="theme-gallery-card palette-choice" data-action="palette" data-value="${key}" aria-pressed="${selected}" style="--theme-fill:${fill}"><span class="theme-status">${locked?icon('lock-keyhole'):''}</span><span class="theme-mini palette-mini"></span><strong>${palette.label}</strong>${locked?'<small>مميّز</small>':''}</button>`;
     }).join('')}</div>${!isPaid()?'<p class="gallery-note">الزمردي والأزرق متاحان للجميع، وبقية المظاهر للمشتركين.</p>':''}</section>
-    <section class="appearance-card gallery-section"><div class="gallery-title"><h3>ثيمات التخصصات</h3><small>تتطبق على المنصة كاملة</small></div><div class="theme-gallery-grid specialty-gallery">${specialtyCards}</div></section>
     ${isPaid()?customPaletteForm(appearance.custom):''}
     <section class="appearance-card glass-settings">
       <label for="glass-range">${icon(isPaid()?'droplets':'lock-keyhole')} شفافية الزجاج <output id="glass-value" for="glass-range">${num(appearance.transparency)}٪</output></label>
@@ -787,7 +781,7 @@ function render(force=false) {
   const phase = !revisited && room?.phase;
   const key = [tab,phase,room?.id,isInvite()].join('|');
   if (force || key!==viewKey || ['active','lobby','outcome'].includes(phase)) {
-    const content = blocked ? '<div class="inner">'+heading('الحساب محظور','تواصل مع مشرف ميثاق للمساعدة.')+'</div>' : tab==='admin'?adminPage():tab==='rooms'?roomsPage():tab==='stats'?stats():tab==='store'?store():tab==='inventory'?inventoryPage():tab==='plans'?plansPage():phase==='lobby'?lobby():phase==='active'?active():phase==='outcome'?outcome():home();
+    const content = blocked ? '<div class="inner">'+heading('الحساب محظور','تواصل مع مشرف ميثاق للمساعدة.')+'</div>' : tab==='admin'?adminPage():tab==='rooms'?roomsPage():tab==='stats'?stats():tab==='notes'?notesPage():tab==='settings'?settingsPage():tab==='plans'?plansPage():phase==='lobby'?lobby():phase==='active'?active():phase==='outcome'?outcome():home();
     if (page.dataset.content !== content) {
       const previous = document.activeElement;
       const selector = previous?.dataset.action && '[data-action="'+previous.dataset.action+'"][data-value="'+previous.dataset.value+'"]';
@@ -917,6 +911,7 @@ document.addEventListener('click',event=>{
     if (tab!==nav.dataset.tab) {
       tab=nav.dataset.tab;
       render();
+      if(tab==='notes'&&notesData===null)loadNotes();
       window.scrollTo({top:0,behavior:'instant'});
     }
     return;
@@ -966,6 +961,8 @@ document.addEventListener('click',event=>{
   else if (action==='adminRevoke') { dialog.close(); adminRequest('adminRevoke',{student:value}); }
   else if(action==='confirmAdminDeleteCode')modal('حذف الكود','سيُحذف الكود نهائيًا من لوحة الإدارة.',button('adminDeleteCode','حذف الكود','danger','trash-2',value)+button('close','رجوع','secondary'));
   else if(action==='adminDeleteCode'){dialog.close();adminRequest('adminDeleteCode',{code:value});}
+  else if(action==='confirmDeleteNote')modal('حذف الصورة','ستُحذف هذه الصورة نهائيًا من ملاحظاتك.',button('deleteNote','حذف','danger','trash-2',value)+button('close','رجوع','secondary'));
+  else if(action==='deleteNote'){dialog.close();socket.timeout(6000).emitWithAck('notesDelete',{note:value}).then(result=>{if(result.error)throw new Error(result.error);notesData=notesData.filter(note=>note.id!==value);render(true);toast('تم حذف الصورة.');}).catch(error=>toast(error.message||'تعذّر حذف الصورة.'));}
   else if (action==='adminCopy') {
     navigator.clipboard?.writeText(value).then(()=>toast('نُسخ الكود.'),()=>toast('حدد الكود وانسخه يدويًا.'));
   }
@@ -1034,8 +1031,13 @@ page.addEventListener('input',event=>{
   if (event.target.name==='pact') pact=event.target.value;
   if (page.querySelector('#create-session-form')) page.dataset.content=home();
 });
+async function noteImage(file){const bitmap=await createImageBitmap(file);const scale=Math.min(1,1400/Math.max(bitmap.width,bitmap.height));const canvas=document.createElement('canvas');canvas.width=Math.round(bitmap.width*scale);canvas.height=Math.round(bitmap.height*scale);canvas.getContext('2d').drawImage(bitmap,0,0,canvas.width,canvas.height);bitmap.close?.();const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/webp',.76));if(!blob)throw new Error('تعذّر تجهيز الصورة.');return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(blob);});}
+async function uploadNotes(form){if(notesBusy||!socket?.connected)return;const data=new FormData(form),files=[...form.elements.images.files];if(!files.length)return;notesBusy=true;const button=form.querySelector('button');button.disabled=true;try{for(const file of files){const image=await noteImage(file);const result=await socket.timeout(20000).emitWithAck('notesAdd',{subject:data.get('subject'),chapter:data.get('chapter'),image});if(result.error)throw new Error(result.error);notesData=[result.note,...(notesData||[])];}form.reset();render(true);toast('تم حفظ '+num(files.length)+' صورة في ملاحظاتك.');}catch(error){toast(error.message||'تعذّر حفظ الصور.');}finally{notesBusy=false;button.disabled=false;}}
 page.addEventListener('submit',event=>{
   const formElement = event.target;
+  if(formElement.id==='note-upload-form'){
+    event.preventDefault();uploadNotes(formElement);return;
+  }
   if (formElement.id==='claim-referral-form') {
     event.preventDefault();
     emit('claimReferral',{code:new FormData(formElement).get('code')});

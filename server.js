@@ -54,12 +54,14 @@ await db.exec(`
   CREATE INDEX IF NOT EXISTS room_pairs_players ON room_pairs(first_player,second_player);
   CREATE TABLE IF NOT EXISTS outcome_views(room TEXT NOT NULL,player TEXT NOT NULL,seen_at BIGINT NOT NULL,PRIMARY KEY(room,player));
   CREATE TABLE IF NOT EXISTS pending_direct_invites(recipient TEXT PRIMARY KEY,room TEXT NOT NULL,sender TEXT NOT NULL,minutes INTEGER NOT NULL,created_at BIGINT NOT NULL);
+  CREATE TABLE IF NOT EXISTS study_notes(id TEXT PRIMARY KEY,player TEXT NOT NULL,subject TEXT NOT NULL,chapter TEXT NOT NULL,image_data TEXT NOT NULL,created_at BIGINT NOT NULL);
+  CREATE INDEX IF NOT EXISTS study_notes_player_created ON study_notes(player,created_at);
 `);
 try{await db.exec('ALTER TABLE players ADD COLUMN tour_seen INTEGER NOT NULL DEFAULT 0');}catch(error){if(!/duplicate|already exists/i.test(error.message))throw error;}
 try{await db.exec('ALTER TABLE referrals ADD COLUMN created_at BIGINT NOT NULL DEFAULT 0');}catch(error){if(!/duplicate|already exists/i.test(error.message))throw error;}
 const app = express();
 export const http = createServer(app);
-const io = new Server(http, { pingInterval:4000, pingTimeout:4000 });
+const io = new Server(http, { pingInterval:4000, pingTimeout:4000, maxHttpBufferSize:1500000 });
 const rooms = new Map();
 const memberships = new Map();
 const newRoomCode=()=>{let code;do{code=randomBytes(4).toString('hex').toUpperCase();}while([...rooms.values()].some(room=>room.code===code));return code;};
@@ -359,6 +361,21 @@ io.on('connection', async(socket) => {
       try { const result=await fn(payload??{}); ack(result&&typeof result==='object'?{ok:true,...result}:{ok:true}); } catch (error) { console.error(event,error);ack({ error:error.message }); }
     });
   }
+  action('notesList',async()=>({notes:await db.all('SELECT id,subject,chapter,image_data,created_at FROM study_notes WHERE player=? ORDER BY created_at DESC',id)}));
+  action('notesAdd',async({subject,chapter,image})=>{
+    if(!telegramIdPattern.test(id))fail('افتح ميثاق من تليجرام لحفظ ملاحظاتك.');
+    subject=typeof subject==='string'?subject.trim().slice(0,60):'';chapter=typeof chapter==='string'?chapter.trim().slice(0,80):'';
+    if(!subject||!chapter)fail('اكتب اسم المادة والشابتر.');
+    if(typeof image!=='string'||image.length>1200000||!/^data:image\/(?:webp|jpeg|png);base64,[A-Za-z0-9+/=]+$/.test(image))fail('الصورة غير صالحة أو حجمها كبير.');
+    const note={id:randomUUID(),subject,chapter,image_data:image,created_at:clock.now()};
+    await run('INSERT INTO study_notes(id,player,subject,chapter,image_data,created_at) VALUES(?,?,?,?,?,?)',note.id,id,subject,chapter,image,note.created_at);
+    return {note};
+  });
+  action('notesDelete',async({note})=>{
+    if(typeof note!=='string')fail('الملاحظة غير صالحة.');
+    if(!(await run('DELETE FROM study_notes WHERE id=? AND player=?',note,id)).changes)fail('الملاحظة غير موجودة.');
+    return {ok:true};
+  });
   function adminAction(event, fn) {
     socket.on(event,async(payload,ack) => {
       if (typeof ack!=='function') return;
@@ -757,6 +774,7 @@ app.use((req,res,next)=>{
 });
 app.use('/icons',express.static('node_modules/lucide-static/icons'));
 app.use('/fonts',express.static('node_modules/@fontsource/ibm-plex-sans-arabic/files'));
+app.use('/fonts',express.static('node_modules/@fontsource/ibm-plex-sans-arabic'));
 app.use(express.static('public'));
 http.listen(Number(process.env.PORT || 3000),'0.0.0.0',() => console.log('Methaq listening'));
 if (bot && (billingEnabled || (PUBLIC_URL && process.env.RUN_BOT === '1'))) {
