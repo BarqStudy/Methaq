@@ -58,6 +58,8 @@ await db.exec(`
   CREATE INDEX IF NOT EXISTS study_notes_player_created ON study_notes(player,created_at);
   CREATE TABLE IF NOT EXISTS note_folders(id TEXT PRIMARY KEY,player TEXT NOT NULL,subject TEXT NOT NULL,chapter TEXT NOT NULL,created_at BIGINT NOT NULL,UNIQUE(player,subject,chapter));
   CREATE INDEX IF NOT EXISTS note_folders_player ON note_folders(player,created_at);
+  CREATE TABLE IF NOT EXISTS appointments(id TEXT PRIMARY KEY,player TEXT NOT NULL,title TEXT NOT NULL,details TEXT NOT NULL DEFAULT '',due_at BIGINT NOT NULL,completed INTEGER NOT NULL DEFAULT 0,created_at BIGINT NOT NULL);
+  CREATE INDEX IF NOT EXISTS appointments_player_due ON appointments(player,completed,due_at);
 `);
 try{await db.exec('ALTER TABLE players ADD COLUMN tour_seen INTEGER NOT NULL DEFAULT 0');}catch(error){if(!/duplicate|already exists/i.test(error.message))throw error;}
 try{await db.exec('ALTER TABLE referrals ADD COLUMN created_at BIGINT NOT NULL DEFAULT 0');}catch(error){if(!/duplicate|already exists/i.test(error.message))throw error;}
@@ -366,6 +368,10 @@ io.on('connection', async(socket) => {
   action('notesList',async()=>({notes:await db.all('SELECT id,subject,chapter,created_at FROM study_notes WHERE player=? ORDER BY created_at DESC',id),folders:await db.all('SELECT id,subject,chapter,created_at FROM note_folders WHERE player=? ORDER BY subject,chapter',id)}));
   action('notesImage',async({note})=>{const row=typeof note==='string'&&await query('SELECT image_data FROM study_notes WHERE id=? AND player=?',note,id);if(!row)fail('الصورة غير موجودة.');return {image:row.image_data};});
   action('notesImageUpdate',async({note,image})=>{if(typeof note!=='string'||typeof image!=='string'||image.length>1200000||!/^data:image\/(?:webp|jpeg|png);base64,[A-Za-z0-9+/=]+$/.test(image))fail('الصورة المعدلة غير صالحة أو حجمها كبير.');const updated=await run('UPDATE study_notes SET image_data=? WHERE id=? AND player=?',image,note,id);if(!updated.changes)fail('الصورة غير موجودة.');return {};});
+  action('appointmentsList',async()=>({appointments:await db.all('SELECT id,title,details,due_at,completed,created_at FROM appointments WHERE player=? ORDER BY completed,due_at',id)}));
+  action('appointmentAdd',async({title,details,dueAt})=>{title=typeof title==='string'?title.trim().slice(0,80):'';details=typeof details==='string'?details.trim().slice(0,240):'';dueAt=Number(dueAt);if(!title)fail('اكتب اسم الموعد.');if(!Number.isFinite(dueAt))fail('اختر تاريخ الموعد ووقته.');const appointment={id:randomUUID(),title,details,due_at:Math.round(dueAt),completed:0,created_at:clock.now()};await run('INSERT INTO appointments(id,player,title,details,due_at,completed,created_at) VALUES(?,?,?,?,?,?,?)',appointment.id,id,title,details,appointment.due_at,0,appointment.created_at);return {appointment};});
+  action('appointmentToggle',async({appointment})=>{const target=typeof appointment==='string'&&await query('SELECT completed FROM appointments WHERE id=? AND player=?',appointment,id);if(!target)fail('الموعد غير موجود.');const completed=target.completed?0:1;await run('UPDATE appointments SET completed=? WHERE id=? AND player=?',completed,appointment,id);return {completed};});
+  action('appointmentDelete',async({appointment})=>{if(typeof appointment!=='string'||!(await run('DELETE FROM appointments WHERE id=? AND player=?',appointment,id)).changes)fail('الموعد غير موجود.');return {};});
   action('notesFolderAdd',async({subject,chapter})=>{
     if(!telegramIdPattern.test(id))fail('افتح ميثاق من تليجرام لإنشاء مجلد.');
     subject=typeof subject==='string'?subject.trim().slice(0,60):'';chapter=typeof chapter==='string'?chapter.trim().slice(0,80):'';

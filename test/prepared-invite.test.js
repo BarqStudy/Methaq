@@ -54,6 +54,11 @@ test('runs Telegram invitations, admin changes, custom appearance, and referral 
   assert.equal((await command(host,'notesList')).notes.length,0);
   assert.deepEqual(await command(host,'notesFolderDelete',{folder:savedFolder.folder.id}),{ok:true,removed:0});
   assert.equal((await command(host,'notesList')).folders.length,0);
+  const savedAppointment=await command(host,'appointmentAdd',{title:'اختبار الأحياء',details:'الفصل الثاني',dueAt:Date.now()+86400000});
+  assert.equal((await command(host,'appointmentsList')).appointments[0].title,'اختبار الأحياء');
+  assert.deepEqual(await command(host,'appointmentToggle',{appointment:savedAppointment.appointment.id}),{ok:true,completed:1});
+  assert.deepEqual(await command(host,'appointmentDelete',{appointment:savedAppointment.appointment.id}),{ok:true});
+  assert.equal((await command(host,'appointmentsList')).appointments.length,0);
   const referral = hostDetails.referrals.code;
   assert.match(referral,/^REF-[A-F0-9]{10}$/);
   assert.ok((await command(host,'claimReferral',{code:referral})).error);

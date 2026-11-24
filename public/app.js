@@ -51,7 +51,7 @@ const isPaid = () => ['pro','special'].includes(profile?.plan?.tier);
 let purchaseBusy = false;
 let activityDay;
 let adminData, adminSearch = '', adminBusy = false, blocked = false;
-let notesData=null,notesBusy=false;
+let notesData=null,notesBusy=false,appointmentsData=null,appointmentsBusy=false;
 let appearanceRequest = 0, appearanceSaveTimer, visualUpdatePending = false;
 let tourIndex=-1,tourPositionTimer;
 const guestId = sessionStorage.getItem('methaq-guest') || Array.from(crypto.getRandomValues(new Uint8Array(18)), b=>b.toString(16).padStart(2,'0')).join('');
@@ -82,6 +82,7 @@ const tourSteps=[
   {selector:'.home-timer',title:'حدّد وقت التركيز',text:'حرّك مقبض الدائرة مع عقارب الساعة، أو اختر مدة سريعة أسفلها.'},
   {selector:'#create-session-form',title:'أنشئ غرفة تركيز',text:'الهدف اختياري. أنشئ الغرفة ثم أرسل رمزها أو دعوتها لشريكك.'},
   {selector:'[data-tab="rooms"]',title:'انضم إلى شريكك',text:'استخدم صفحة الغرف لإدخال الرمز أو قبول دعوة مباشرة.'},
+  {selector:'[data-tab="appointments"]',title:'مواعيدك أمامك',text:'أضف الاختبارات والتسليمات ورتبها حسب موعدها.'},
   {selector:'[data-tab="notes"]',title:'ملاحظاتك مرتبة',text:'احفظ صور السبورة داخل المادة والشابتر، وستجد تاريخ الرفع الميلادي والهجري معها.'}
 ];
 const tourStorageKey=()=>`methaq.tour.v1.${user?.id||guestId}`;
@@ -418,6 +419,9 @@ function inventoryPage(){
 }
 const gregorianNoteDate=value=>new Intl.DateTimeFormat('ar-SA-u-ca-gregory-nu-latn',{dateStyle:'long'}).format(new Date(Number(value)));
 const hijriNoteDate=value=>new Intl.DateTimeFormat('ar-SA-u-ca-islamic-umalqura-nu-latn',{dateStyle:'long'}).format(new Date(Number(value)));
+const appointmentDate=value=>new Intl.DateTimeFormat('ar-SA-u-ca-gregory-nu-latn',{dateStyle:'medium',timeStyle:'short'}).format(new Date(Number(value)));
+async function loadAppointments(){if(appointmentsBusy||!socket?.connected)return;appointmentsBusy=true;try{const result=await socket.timeout(8000).emitWithAck('appointmentsList',{});if(result.error)throw new Error(result.error);appointmentsData=result.appointments||[];}catch(error){toast(error.message||'تعذّر تحميل المواعيد.');appointmentsData=[];}finally{appointmentsBusy=false;if(tab==='appointments')render(true);}}
+function appointmentsPage(){const entries=appointmentsData||[],upcoming=entries.filter(item=>!item.completed),completed=entries.filter(item=>item.completed);const rows=list=>list.map(item=>`<article class="panel appointment-card ${item.completed?'is-completed':''}"><button type="button" class="appointment-check" data-action="toggleAppointment" data-value="${item.id}" aria-label="${item.completed?'إعادة الموعد':'إنجاز الموعد'}">${icon(item.completed?'circle-check-big':'circle')}</button><div><strong>${esc(item.title)}</strong><time>${icon('calendar-clock')} ${appointmentDate(item.due_at)}</time>${item.details?`<p>${esc(item.details)}</p>`:''}</div>${button('confirmDeleteAppointment','حذف','plain','trash-2',item.id)}</article>`).join('');return `<div class="inner appointments-page">${heading('المواعيد','رتّب اختباراتك وتسليماتك ولا تدع موعدًا يفوتك.')}<form id="appointment-form" class="panel appointment-form"><label class="field">اسم الموعد<input name="title" maxlength="80" placeholder="مثال: اختبار الأحياء" required></label><label class="field">التاريخ والوقت<input name="dueAt" type="datetime-local" required></label><label class="field appointment-details">تفاصيل اختيارية<textarea name="details" maxlength="240" placeholder="المكان أو المطلوب تحضيره"></textarea></label><button class="primary">${icon('calendar-plus')} إضافة الموعد</button></form>${appointmentsData===null?'<section class="panel">جارٍ تحميل مواعيدك…</section>':`<section class="appointments-group"><div class="appointments-title"><h2>القادمة</h2><span>${num(upcoming.length)}</span></div><div class="appointments-list">${rows(upcoming)||'<div class="panel appointments-empty">'+icon('calendar-check')+'<p>لا توجد مواعيد قادمة.</p></div>'}</div></section>${completed.length?`<details class="completed-appointments"><summary>المواعيد المنجزة (${num(completed.length)})</summary><div class="appointments-list">${rows(completed)}</div></details>`:''}`}</div>`;}
 async function loadNotes(){if(notesBusy||!socket?.connected)return;notesBusy=true;try{const result=await socket.timeout(8000).emitWithAck('notesList',{});if(result.error)throw new Error(result.error);notesData={notes:result.notes||[],folders:result.folders||[]};}catch(error){toast(error.message||'تعذّر تحميل الملاحظات.');notesData={notes:[],folders:[]};}finally{notesBusy=false;if(tab==='notes')render(true);}}
 function notesPage(){
   const groups=new Map(),folderIds=new Map(),notes=notesData?.notes||[],folders=notesData?.folders||[];for(const folder of folders){if(!groups.has(folder.subject))groups.set(folder.subject,new Map());groups.get(folder.subject).set(folder.chapter,[]);folderIds.set(folder.subject+'\0'+folder.chapter,folder.id);}for(const note of notes){if(!groups.has(note.subject))groups.set(note.subject,new Map());const chapters=groups.get(note.subject);if(!chapters.has(note.chapter))chapters.set(note.chapter,[]);chapters.get(note.chapter).push(note);}
@@ -797,7 +801,7 @@ function render(force=false) {
   const phase = !revisited && room?.phase;
   const key = [tab,phase,room?.id,isInvite()].join('|');
   if (force || key!==viewKey || ['active','lobby','outcome'].includes(phase)) {
-    const content = blocked ? '<div class="inner">'+heading('الحساب محظور','تواصل مع مشرف ميثاق للمساعدة.')+'</div>' : tab==='admin'?adminPage():tab==='rooms'?roomsPage():tab==='stats'?stats():tab==='notes'?notesPage():tab==='settings'?settingsPage():tab==='plans'?plansPage():phase==='lobby'?lobby():phase==='active'?active():phase==='outcome'?outcome():home();
+    const content = blocked ? '<div class="inner">'+heading('الحساب محظور','تواصل مع مشرف ميثاق للمساعدة.')+'</div>' : tab==='admin'?adminPage():tab==='rooms'?roomsPage():tab==='appointments'?appointmentsPage():tab==='notes'?notesPage():tab==='settings'?settingsPage():tab==='plans'?plansPage():phase==='lobby'?lobby():phase==='active'?active():phase==='outcome'?outcome():home();
     if (page.dataset.content !== content) {
       const previous = document.activeElement;
       const selector = previous?.dataset.action && '[data-action="'+previous.dataset.action+'"][data-value="'+previous.dataset.value+'"]';
@@ -931,6 +935,7 @@ document.addEventListener('click',event=>{
       tab=nav.dataset.tab;
       render();
       if(tab==='notes'&&notesData===null)loadNotes();
+      if(tab==='appointments'&&appointmentsData===null)loadAppointments();
       window.scrollTo({top:0,behavior:'instant'});
     }
     return;
@@ -981,6 +986,9 @@ document.addEventListener('click',event=>{
   else if(action==='confirmAdminDeleteCode')modal('حذف الكود','سيُحذف الكود نهائيًا من لوحة الإدارة.',button('adminDeleteCode','حذف الكود','danger','trash-2',value)+button('close','رجوع','secondary'));
   else if(action==='adminDeleteCode'){dialog.close();adminRequest('adminDeleteCode',{code:value});}
   else if(action==='confirmDeleteNote')modal('حذف الصورة','ستُحذف هذه الصورة نهائيًا من ملاحظاتك.',button('deleteNote','حذف','danger','trash-2',value)+button('close','رجوع','secondary'));
+  else if(action==='toggleAppointment'){socket.timeout(6000).emitWithAck('appointmentToggle',{appointment:value}).then(result=>{if(result.error)throw new Error(result.error);const item=appointmentsData?.find(entry=>entry.id===value);if(item)item.completed=result.completed;appointmentsData?.sort((a,b)=>a.completed-b.completed||a.due_at-b.due_at);render(true);toast(result.completed?'تم إنجاز الموعد.':'أُعيد الموعد إلى القائمة.');}).catch(error=>toast(error.message||'تعذّر تحديث الموعد.'));}
+  else if(action==='confirmDeleteAppointment')modal('حذف الموعد','سيُحذف هذا الموعد نهائيًا.',button('deleteAppointment','حذف الموعد','danger','trash-2',value)+button('close','رجوع','secondary'));
+  else if(action==='deleteAppointment'){dialog.close();socket.timeout(6000).emitWithAck('appointmentDelete',{appointment:value}).then(result=>{if(result.error)throw new Error(result.error);appointmentsData=appointmentsData.filter(item=>item.id!==value);render(true);toast('تم حذف الموعد.');}).catch(error=>toast(error.message||'تعذّر حذف الموعد.'));}
   else if(action==='deleteNote'){dialog.close();socket.timeout(6000).emitWithAck('notesDelete',{note:value}).then(result=>{if(result.error)throw new Error(result.error);notesData.notes=notesData.notes.filter(note=>note.id!==value);render(true);toast('تم حذف الصورة.');}).catch(error=>toast(error.message||'تعذّر حذف الصورة.'));}
   else if(action==='subjectPdf')prepareSubjectPdf(decodeURIComponent(value));
   else if(action==='newNoteFolder'){const subjects=[...new Set((notesData?.folders||[]).map(folder=>folder.subject))];modal('إنشاء مجلد','اختر مادة أضفتها سابقًا لإضافة شابتر جديد، أو اكتب مادة جديدة.',`<form id="note-folder-form" class="stack"><label class="field">مادة مضافة مسبقًا<select name="existingSubject"><option value="">مادة جديدة</option>${subjects.map(subject=>`<option value="${esc(subject)}">${esc(subject)}</option>`).join('')}</select></label><label class="field">أو اكتب مادة جديدة<input name="subject" maxlength="60" placeholder="مثال: علم الأدوية"></label><label class="field">الشابتر<input name="chapter" maxlength="80" placeholder="مثال: Chapter 3" required></label><div class="actions"><button class="primary">${icon('folder-plus')} إنشاء</button>${button('close','إلغاء','secondary')}</div></form>`);}
@@ -1065,6 +1073,9 @@ async function noteImage(file){const bitmap=await createImageBitmap(file);const 
 async function uploadNotes(form,mode){if(notesBusy||!socket?.connected)return;const data=new FormData(form),files=[...form.elements.images.files],quick=mode==='quick';if(!files.length)return;if(!quick&&!data.get('folder'))return toast('اختر مجلدًا قبل رفع الصور.');notesBusy=true;const buttons=[...form.querySelectorAll('button')],status=form.querySelector('.upload-status');buttons.forEach(button=>button.disabled=true);try{for(const file of files){status.textContent='جارٍ تحميل: '+file.name;const image=await noteImage(file);const result=await socket.timeout(20000).emitWithAck('notesAdd',{folder:data.get('folder'),quick,image});if(result.error)throw new Error(result.error);notesData.notes=[result.note,...(notesData?.notes||[])];if(result.folder&&!notesData.folders.some(folder=>folder.id===result.folder.id))notesData.folders.push(result.folder);status.textContent='تم تحميل الصورة: '+file.name;toast('تم تحميل الصورة: '+file.name);}form.reset();render(true);}catch(error){toast(error.message||'تعذّر حفظ الصور.');}finally{notesBusy=false;buttons.forEach(button=>button.disabled=false);}}
 page.addEventListener('submit',event=>{
   const formElement = event.target;
+  if(formElement.id==='appointment-form'){
+    event.preventDefault();if(appointmentsBusy)return;const data=new FormData(formElement),dueAt=new Date(data.get('dueAt')).getTime();if(!Number.isFinite(dueAt))return toast('اختر تاريخ الموعد ووقته.');appointmentsBusy=true;const submit=event.submitter;submit.disabled=true;socket.timeout(8000).emitWithAck('appointmentAdd',{title:data.get('title'),details:data.get('details'),dueAt}).then(result=>{if(result.error)throw new Error(result.error);appointmentsData=[...(appointmentsData||[]),result.appointment].sort((a,b)=>a.completed-b.completed||a.due_at-b.due_at);formElement.reset();render(true);toast('تمت إضافة الموعد.');}).catch(error=>toast(error.message||'تعذّرت إضافة الموعد.')).finally(()=>{appointmentsBusy=false;submit.disabled=false;});return;
+  }
   if(formElement.id==='note-upload-form'){
     event.preventDefault();uploadNotes(formElement,event.submitter?.value);return;
   }
