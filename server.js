@@ -372,14 +372,19 @@ io.on('connection', async(socket) => {
     const existing=await query('SELECT id,subject,chapter,created_at FROM note_folders WHERE player=? AND subject=? AND chapter=?',id,subject,chapter);if(existing)return {folder:existing};
     const folder={id:randomUUID(),subject,chapter,created_at:clock.now()};await run('INSERT INTO note_folders(id,player,subject,chapter,created_at) VALUES(?,?,?,?,?)',folder.id,id,subject,chapter,folder.created_at);return {folder};
   });
+  action('notesFolderDelete',async({folder})=>{
+    const target=typeof folder==='string'&&await query('SELECT subject,chapter FROM note_folders WHERE id=? AND player=?',folder,id);if(!target)fail('المجلد غير موجود.');
+    let removed=0;await transaction(async()=>{removed=Number((await query('SELECT count(*) AS total FROM study_notes WHERE player=? AND subject=? AND chapter=?',id,target.subject,target.chapter))?.total||0);await run('DELETE FROM study_notes WHERE player=? AND subject=? AND chapter=?',id,target.subject,target.chapter);await run('DELETE FROM note_folders WHERE id=? AND player=?',folder,id);});return {removed};
+  });
   action('notesAdd',async({folder,quick,image})=>{
     if(!telegramIdPattern.test(id))fail('افتح ميثاق من تليجرام لحفظ ملاحظاتك.');
-    let subject='الإضافة السريعة',chapter='غير مصنف';
-    if(!quick){const target=typeof folder==='string'&&await query('SELECT subject,chapter FROM note_folders WHERE id=? AND player=?',folder,id);if(!target)fail('اختر مجلدًا صالحًا.');({subject,chapter}=target);}
+    let subject='الإضافة السريعة',chapter='غير مصنف',assignedFolder;
+    if(quick){await run('INSERT INTO note_folders(id,player,subject,chapter,created_at) VALUES(?,?,?,?,?) ON CONFLICT(player,subject,chapter) DO NOTHING',randomUUID(),id,subject,chapter,clock.now());assignedFolder=await query('SELECT id,subject,chapter,created_at FROM note_folders WHERE player=? AND subject=? AND chapter=?',id,subject,chapter);}
+    else{const target=typeof folder==='string'&&await query('SELECT id,subject,chapter,created_at FROM note_folders WHERE id=? AND player=?',folder,id);if(!target)fail('اختر مجلدًا صالحًا.');assignedFolder=target;({subject,chapter}=target);}
     if(typeof image!=='string'||image.length>1200000||!/^data:image\/(?:webp|jpeg|png);base64,[A-Za-z0-9+/=]+$/.test(image))fail('الصورة غير صالحة أو حجمها كبير.');
     const note={id:randomUUID(),subject,chapter,image_data:image,created_at:clock.now()};
     await run('INSERT INTO study_notes(id,player,subject,chapter,image_data,created_at) VALUES(?,?,?,?,?,?)',note.id,id,subject,chapter,image,note.created_at);
-    return {note};
+    return {note,folder:assignedFolder};
   });
   action('notesDelete',async({note})=>{
     if(typeof note!=='string')fail('الملاحظة غير صالحة.');
