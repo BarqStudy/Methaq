@@ -365,6 +365,7 @@ io.on('connection', async(socket) => {
   }
   action('notesList',async()=>({notes:await db.all('SELECT id,subject,chapter,created_at FROM study_notes WHERE player=? ORDER BY created_at DESC',id),folders:await db.all('SELECT id,subject,chapter,created_at FROM note_folders WHERE player=? ORDER BY subject,chapter',id)}));
   action('notesImage',async({note})=>{const row=typeof note==='string'&&await query('SELECT image_data FROM study_notes WHERE id=? AND player=?',note,id);if(!row)fail('الصورة غير موجودة.');return {image:row.image_data};});
+  action('notesImageUpdate',async({note,image})=>{if(typeof note!=='string'||typeof image!=='string'||image.length>1200000||!/^data:image\/(?:webp|jpeg|png);base64,[A-Za-z0-9+/=]+$/.test(image))fail('الصورة المعدلة غير صالحة أو حجمها كبير.');const updated=await run('UPDATE study_notes SET image_data=? WHERE id=? AND player=?',image,note,id);if(!updated.changes)fail('الصورة غير موجودة.');return {};});
   action('notesFolderAdd',async({subject,chapter})=>{
     if(!telegramIdPattern.test(id))fail('افتح ميثاق من تليجرام لإنشاء مجلد.');
     subject=typeof subject==='string'?subject.trim().slice(0,60):'';chapter=typeof chapter==='string'?chapter.trim().slice(0,80):'';
