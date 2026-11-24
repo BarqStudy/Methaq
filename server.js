@@ -58,11 +58,12 @@ await db.exec(`
   CREATE INDEX IF NOT EXISTS study_notes_player_created ON study_notes(player,created_at);
   CREATE TABLE IF NOT EXISTS note_folders(id TEXT PRIMARY KEY,player TEXT NOT NULL,subject TEXT NOT NULL,chapter TEXT NOT NULL,created_at BIGINT NOT NULL,UNIQUE(player,subject,chapter));
   CREATE INDEX IF NOT EXISTS note_folders_player ON note_folders(player,created_at);
-  CREATE TABLE IF NOT EXISTS appointments(id TEXT PRIMARY KEY,player TEXT NOT NULL,title TEXT NOT NULL,details TEXT NOT NULL DEFAULT '',due_at BIGINT NOT NULL,completed INTEGER NOT NULL DEFAULT 0,created_at BIGINT NOT NULL);
+  CREATE TABLE IF NOT EXISTS appointments(id TEXT PRIMARY KEY,player TEXT NOT NULL,title TEXT NOT NULL,details TEXT NOT NULL DEFAULT '',due_at BIGINT NOT NULL,completed INTEGER NOT NULL DEFAULT 0,notified INTEGER NOT NULL DEFAULT 0,created_at BIGINT NOT NULL);
   CREATE INDEX IF NOT EXISTS appointments_player_due ON appointments(player,completed,due_at);
 `);
 try{await db.exec('ALTER TABLE players ADD COLUMN tour_seen INTEGER NOT NULL DEFAULT 0');}catch(error){if(!/duplicate|already exists/i.test(error.message))throw error;}
 try{await db.exec('ALTER TABLE referrals ADD COLUMN created_at BIGINT NOT NULL DEFAULT 0');}catch(error){if(!/duplicate|already exists/i.test(error.message))throw error;}
+try{await db.exec('ALTER TABLE appointments ADD COLUMN notified INTEGER NOT NULL DEFAULT 0');}catch(error){if(!/duplicate|already exists/i.test(error.message))throw error;}
 const app = express();
 export const http = createServer(app);
 const io = new Server(http, { pingInterval:4000, pingTimeout:4000, maxHttpBufferSize:1500000 });
@@ -108,6 +109,9 @@ async function consumeTemporaryPoints(player,amount){
 }
 await expirePointGrants();
 setInterval(async()=>{try{for(const id of await expirePointGrants())await updatePlayer(id);}catch(error){console.error('تعذّر إنهاء النقاط المؤقتة.',error.message);}},60000).unref();
+let appointmentNotifierBusy=false;
+export async function notifyDueAppointments(){if(!bot||appointmentNotifierBusy)return;appointmentNotifierBusy=true;try{const due=await db.all('SELECT id,player,title,details FROM appointments WHERE completed=0 AND notified=0 AND due_at<=? ORDER BY due_at LIMIT 50',clock.now());for(const appointment of due){if(!telegramIdPattern.test(appointment.player)){await run('UPDATE appointments SET notified=2 WHERE id=?',appointment.id);continue;}const claimed=await run('UPDATE appointments SET notified=1 WHERE id=? AND notified=0',appointment.id);if(!claimed.changes)continue;try{await bot.telegram.sendMessage(appointment.player,`⏰ حان موعدك الآن\n\n${appointment.title}${appointment.details?'\n'+appointment.details:''}`,{disable_notification:false});}catch(error){const permanent=[400,403].includes(error?.response?.error_code);await run('UPDATE appointments SET notified=? WHERE id=?',permanent?2:0,appointment.id);console.error('تعذّر إرسال تنبيه الموعد.',error.message);}}}finally{appointmentNotifierBusy=false;}}
+setInterval(()=>notifyDueAppointments().catch(error=>console.error('تعذّر فحص المواعيد.',error.message)),15000).unref();
 async function updatePlayer(id) {
   if (!await query('SELECT 1 FROM players WHERE id=?',id)) return;
   io.to('player:'+id).emit('profile',await profile(id));

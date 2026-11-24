@@ -14,7 +14,7 @@ test('runs Telegram invitations, admin changes, custom appearance, and referral 
   process.env.RUN_BOT = '0';
   process.env.ADMIN_TELEGRAM_IDS = '"١٠١، ٩٩٩"';
   const api = t.mock.method(Telegram.prototype,'callApi',async () => ({id:'prepared-test-message'}));
-  const {http,clock} = await import('../server.js');
+  const {http,clock,notifyDueAppointments} = await import('../server.js');
   if (!http.listening) await once(http,'listening');
   const sockets = [];
   t.after(() => { sockets.forEach(socket=>socket.disconnect()); http.close(); });
@@ -54,8 +54,10 @@ test('runs Telegram invitations, admin changes, custom appearance, and referral 
   assert.equal((await command(host,'notesList')).notes.length,0);
   assert.deepEqual(await command(host,'notesFolderDelete',{folder:savedFolder.folder.id}),{ok:true,removed:0});
   assert.equal((await command(host,'notesList')).folders.length,0);
-  const savedAppointment=await command(host,'appointmentAdd',{title:'اختبار الأحياء',details:'الفصل الثاني',dueAt:Date.now()+86400000});
+  const savedAppointment=await command(host,'appointmentAdd',{title:'اختبار الأحياء',details:'الفصل الثاني',dueAt:Date.now()-1000});
   assert.equal((await command(host,'appointmentsList')).appointments[0].title,'اختبار الأحياء');
+  await notifyDueAppointments();
+  assert.ok(api.mock.calls.some(call=>call.arguments[0]==='sendMessage'&&String(call.arguments[1].chat_id)==='101'));
   assert.deepEqual(await command(host,'appointmentToggle',{appointment:savedAppointment.appointment.id}),{ok:true,completed:1});
   assert.deepEqual(await command(host,'appointmentDelete',{appointment:savedAppointment.appointment.id}),{ok:true});
   assert.equal((await command(host,'appointmentsList')).appointments.length,0);
@@ -113,8 +115,9 @@ test('runs Telegram invitations, admin changes, custom appearance, and referral 
   assert.deepEqual(await command(host,'directInvite',{handle:'@student_102'}),{ok:true});
   assert.equal((await direct)[0].code,room.id);
   assert.deepEqual(await command(host,'prepareInvite'),{messageId:'prepared-test-message'});
-  assert.equal(api.mock.callCount(),1);
-  const [method,payload] = api.mock.calls[0].arguments;
+  const preparedCall=api.mock.calls.find(call=>call.arguments[0]==='savePreparedInlineMessage');
+  assert.ok(preparedCall);
+  const [method,payload] = preparedCall.arguments;
   assert.equal(method,'savePreparedInlineMessage');
   assert.equal(payload.user_id,101);
   assert.equal(payload.allow_user_chats,true);
