@@ -553,7 +553,11 @@ dialog.addEventListener('input',event=>{
 dialog.addEventListener('submit',event=>{
   if(event.target.id==='absence-calculator') event.preventDefault();
 });
-const appointmentDayKey=value=>new Intl.DateTimeFormat('en-CA',{year:'numeric',month:'2-digit',day:'2-digit',timeZone:'Asia/Riyadh'}).format(new Date(Number(value)));
+const appointmentDayFormatter = new Intl.DateTimeFormat('en-CA',{calendar:'gregory',numberingSystem:'latn',year:'numeric',month:'2-digit',day:'2-digit',timeZone:'Asia/Riyadh'});
+function appointmentDayKey(value) {
+  const parts = Object.fromEntries(appointmentDayFormatter.formatToParts(Number(value)).map(({type,value})=>[type,value]));
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
 const hijriParts=value=>Object.fromEntries(new Intl.DateTimeFormat('en-US-u-ca-islamic-umalqura-nu-latn',{year:'numeric',month:'numeric',day:'numeric',timeZone:'Asia/Riyadh'}).formatToParts(value).filter(part=>['year','month','day'].includes(part.type)).map(part=>[part.type,Number(part.value)]));
 const hijriMonths=['محرّم','صفر','ربيع الأول','ربيع الآخر','جمادى الأولى','جمادى الآخرة','رجب','شعبان','رمضان','شوّال','ذو القعدة','ذو الحجة'];
 function hijriDateToTimestamp(year,month,day,time){const formatter=new Intl.DateTimeFormat('en-US-u-ca-islamic-umalqura-nu-latn',{year:'numeric',month:'numeric',day:'numeric',timeZone:'Asia/Riyadh'}),start=Date.UTC(year+578,0,1),end=Date.UTC(year+581,0,1);for(let value=start;value<end;value+=86400000){const parts=Object.fromEntries(formatter.formatToParts(value).filter(part=>['year','month','day'].includes(part.type)).map(part=>[part.type,Number(part.value)]));if(parts.year===year&&parts.month===month&&parts.day===day){const gregorian=new Intl.DateTimeFormat('en-CA',{year:'numeric',month:'2-digit',day:'2-digit',timeZone:'Asia/Riyadh'}).format(value);return new Date(gregorian+'T'+time+':00+03:00').getTime();}}return NaN;}
