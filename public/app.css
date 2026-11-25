@@ -904,6 +904,14 @@ body.viewer-open{overflow:hidden}.note-card img{cursor:zoom-in}.note-viewer{posi
 .university-category{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text)}
 .university-category i{width:13px;height:13px;color:var(--event-tone)}
 .university-date .countdown-chip{min-width:0}
+.appointments-list .appointment-card{--card-tone:#388dc4;border:1px solid color-mix(in srgb,var(--card-tone) 40%,var(--line));background:linear-gradient(135deg,color-mix(in srgb,var(--card-tone) 25%,var(--surface)),var(--surface));border-radius:18px}
+.appointment-card[data-tone="1"]{--card-tone:#bd639a}
+.appointment-card[data-tone="2"]{--card-tone:#669c76}
+.appointment-card[data-tone="3"]{--card-tone:#b68c48}
+.appointment-card.is-completed{filter:grayscale(1);opacity:1}
+.appointment-card .countdown-chip{background:color-mix(in srgb,var(--card-tone) 22%,var(--surface));border-color:color-mix(in srgb,var(--card-tone) 48%,var(--line));color:var(--text)}
+.appointment-card>div>strong{overflow-wrap:anywhere}
+@media(max-width:360px){.appointment-card .countdown-chip{min-width:0}.appointment-card .countdown-chip strong{white-space:normal}}
 .university-term .university-date.is-ended{filter:grayscale(1)}
 @media(max-width:360px){.university-date .countdown-chip strong{white-space:normal}}
 .university-term{border:1px solid var(--line);border-radius:16px;padding:0 12px;background:var(--surface)}
