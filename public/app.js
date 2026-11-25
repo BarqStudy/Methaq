@@ -660,9 +660,6 @@ dialog.addEventListener('submit',async event=>{
     toast('تم حفظ ألوانك.');
   }catch(error){visualUpdatePending=false;profile.appearance=previous;applyAppearance();toast(error.message||'تعذّر حفظ الألوان.');}
 });
-dialog.addEventListener('submit',async event=>{
-  if(event.target.id!=='note-folder-form')return;event.preventDefault();const form=new FormData(event.target),button=event.target.querySelector('button'),subject=form.get('existingSubject')||form.get('subject');if(!subject)return toast('اختر مادة أو اكتب اسم مادة جديدة.');button.disabled=true;try{const result=await socket.timeout(6000).emitWithAck('notesFolderAdd',{subject,chapter:form.get('chapter')});if(result.error)throw new Error(result.error);notesData||={notes:[],folders:[]};if(!notesData.folders.some(folder=>folder.id===result.folder.id))notesData.folders.push(result.folder);dialog.close();render(true);toast('تم إنشاء المجلد: '+result.folder.subject+' — '+result.folder.chapter);}catch(error){toast(error.message||'تعذّر إنشاء المجلد.');button.disabled=false;}
-});
 dialog.addEventListener('change',event=>{if(event.target.name!=='calendar')return;const form=event.target.closest('#appointment-dialog-form'),hijri=event.target.value==='hijri';form.querySelector('.gregorian-date').hidden=hijri;form.querySelector('.gregorian-date input').required=!hijri;form.querySelector('.hijri-date').hidden=!hijri;form.querySelectorAll('.hijri-date input,.hijri-date select').forEach(input=>input.required=hijri);});
 dialog.addEventListener('submit',async event=>{
   if(event.target.id!=='appointment-dialog-form')return;event.preventDefault();if(appointmentsBusy)return;const formElement=event.target,data=new FormData(formElement),calendar=data.get('calendar'),time=data.get('time'),dueAt=calendar==='hijri'?hijriDateToTimestamp(Number(data.get('hijriYear')),Number(data.get('hijriMonth')),Number(data.get('hijriDay')),time):new Date(data.get('gregorianDate')+'T'+time+':00+03:00').getTime();if(!Number.isFinite(dueAt))return toast('تحقق من اليوم والتاريخ المختار.');appointmentsBusy=true;const submit=event.submitter;submit.disabled=true;try{const result=await socket.timeout(8000).emitWithAck('appointmentAdd',{title:data.get('title'),details:data.get('details'),dueAt});if(result.error)throw new Error(result.error);appointmentsData=[...(appointmentsData||[]),result.appointment].sort((a,b)=>a.completed-b.completed||a.due_at-b.due_at);calendarSelected=appointmentDayKey(dueAt);const [year,month]=calendarSelected.split('-').map(Number);calendarCursor={year,month};dialog.close();render(true);toast('تمت إضافة الموعد.');}catch(error){toast(error.message||'تعذّرت إضافة الموعد.');submit.disabled=false;}finally{appointmentsBusy=false;}
@@ -935,8 +932,6 @@ async function shareInvite(button) {
 }
 document.addEventListener('click',event=>{
   if (blocked) return;
-  const noteImage=event.target.closest('.note-card img');
-  if(noteImage){const noteId=noteImage.closest('.note-card')?.querySelector('[data-action="confirmDeleteNote"]')?.dataset.value;if(noteId)openNoteViewer(noteId);return;}
   const nav = event.target.closest('[data-tab]');
   if (nav) {
     if (room?.phase==='active' && nav.dataset.tab!=='home') return toast('التنقل متاح بعد انتهاء جلسة التركيز.');
@@ -993,7 +988,6 @@ document.addEventListener('click',event=>{
   else if (action==='adminRevoke') { dialog.close(); adminRequest('adminRevoke',{student:value}); }
   else if(action==='confirmAdminDeleteCode')modal('حذف الكود','سيُحذف الكود نهائيًا من لوحة الإدارة.',button('adminDeleteCode','حذف الكود','danger','trash-2',value)+button('close','رجوع','secondary'));
   else if(action==='adminDeleteCode'){dialog.close();adminRequest('adminDeleteCode',{code:value});}
-  else if(action==='confirmDeleteNote')modal('حذف الصورة','ستُحذف هذه الصورة نهائيًا من ملاحظاتك.',button('deleteNote','حذف','danger','trash-2',value)+button('close','رجوع','secondary'));
   else if(action==='calendarMove'){let month=calendarCursor.month+Number(value),year=calendarCursor.year;if(month<1){month=12;year--;}if(month>12){month=1;year++;}calendarCursor={year,month};calendarSelected=`${year}-${String(month).padStart(2,'0')}-01`;render(true);}
   else if(action==='calendarToday'){const today=appointmentDayKey(Date.now()),[year,month]=today.split('-').map(Number);calendarCursor={year,month};calendarSelected=today;render(true);}
   else if(action==='calendarSelect'){calendarSelected=value;render(true);tg?.HapticFeedback?.selectionChanged();}
@@ -1001,11 +995,6 @@ document.addEventListener('click',event=>{
   else if(action==='toggleAppointment'){socket.timeout(6000).emitWithAck('appointmentToggle',{appointment:value}).then(result=>{if(result.error)throw new Error(result.error);const item=appointmentsData?.find(entry=>entry.id===value);if(item)item.completed=result.completed;appointmentsData?.sort((a,b)=>a.completed-b.completed||a.due_at-b.due_at);render(true);toast(result.completed?'تم إنجاز الموعد.':'أُعيد الموعد إلى القائمة.');}).catch(error=>toast(error.message||'تعذّر تحديث الموعد.'));}
   else if(action==='confirmDeleteAppointment')modal('حذف الموعد','سيُحذف هذا الموعد نهائيًا.',button('deleteAppointment','حذف الموعد','danger','trash-2',value)+button('close','رجوع','secondary'));
   else if(action==='deleteAppointment'){dialog.close();socket.timeout(6000).emitWithAck('appointmentDelete',{appointment:value}).then(result=>{if(result.error)throw new Error(result.error);appointmentsData=appointmentsData.filter(item=>item.id!==value);render(true);toast('تم حذف الموعد.');}).catch(error=>toast(error.message||'تعذّر حذف الموعد.'));}
-  else if(action==='deleteNote'){dialog.close();socket.timeout(6000).emitWithAck('notesDelete',{note:value}).then(result=>{if(result.error)throw new Error(result.error);notesData.notes=notesData.notes.filter(note=>note.id!==value);render(true);toast('تم حذف الصورة.');}).catch(error=>toast(error.message||'تعذّر حذف الصورة.'));}
-  else if(action==='subjectPdf')prepareSubjectPdf(decodeURIComponent(value));
-  else if(action==='newNoteFolder'){const subjects=[...new Set((notesData?.folders||[]).map(folder=>folder.subject))];modal('إنشاء مجلد','اختر مادة أضفتها سابقًا لإضافة شابتر جديد، أو اكتب مادة جديدة.',`<form id="note-folder-form" class="stack"><label class="field">مادة مضافة مسبقًا<select name="existingSubject"><option value="">مادة جديدة</option>${subjects.map(subject=>`<option value="${esc(subject)}">${esc(subject)}</option>`).join('')}</select></label><label class="field">أو اكتب مادة جديدة<input name="subject" maxlength="60" placeholder="مثال: علم الأدوية"></label><label class="field">الشابتر<input name="chapter" maxlength="80" placeholder="مثال: Chapter 3" required></label><div class="actions"><button class="primary">${icon('folder-plus')} إنشاء</button>${button('close','إلغاء','secondary')}</div></form>`);}
-  else if(action==='confirmDeleteFolder')modal('حذف المجلد','سيُحذف المجلد وجميع الصور الموجودة داخله نهائيًا.',button('deleteNoteFolder','حذف المجلد','danger','trash-2',value)+button('close','رجوع','secondary'));
-  else if(action==='deleteNoteFolder'){dialog.close();const folder=notesData?.folders.find(item=>item.id===value);socket.timeout(8000).emitWithAck('notesFolderDelete',{folder:value}).then(result=>{if(result.error)throw new Error(result.error);if(folder){notesData.folders=notesData.folders.filter(item=>item.id!==value);notesData.notes=notesData.notes.filter(note=>note.subject!==folder.subject||note.chapter!==folder.chapter);}render(true);toast('تم حذف المجلد و'+num(result.removed)+' صورة.');}).catch(error=>toast(error.message||'تعذّر حذف المجلد.'));}
   else if (action==='adminCopy') {
     navigator.clipboard?.writeText(value).then(()=>toast('نُسخ الكود.'),()=>toast('حدد الكود وانسخه يدويًا.'));
   }
@@ -1069,25 +1058,13 @@ page.addEventListener('pointerdown',event=>{
   };
   window.addEventListener('pointermove',move);window.addEventListener('pointerup',end,{once:true});
 });
-page.addEventListener('pointerdown',event=>{
-  const folder=event.target.closest('[data-folder-id]');if(!folder||event.pointerType==='mouse'&&event.button!==0)return;const start=event.clientX;let distance=0,moved=false;folder.setPointerCapture?.(event.pointerId);
-  const move=pointer=>{distance=Math.max(0,pointer.clientX-start);if(distance>8){moved=true;pointer.preventDefault();folder.style.transform=`translateX(${Math.min(distance,105)}px)`;folder.classList.toggle('delete-ready',distance>=75);}};
-  const end=()=>{folder.removeEventListener('pointermove',move);folder.removeEventListener('pointerup',end);folder.removeEventListener('pointercancel',end);folder.style.transform='';folder.classList.remove('delete-ready');if(moved&&distance>=75){event.preventDefault();const label=folder.querySelector('summary strong')?.textContent||'المجلد';modal('حذف '+label,'اسحب للتأكيد ثم اختر حذف المجلد. ستُحذف جميع صوره.',button('deleteNoteFolder','حذف المجلد','danger','trash-2',folder.dataset.folderId)+button('close','رجوع','secondary'));}};
-  folder.addEventListener('pointermove',move);folder.addEventListener('pointerup',end);folder.addEventListener('pointercancel',end);
-});
 page.addEventListener('input',event=>{
   if (event.target.name==='goal') goal=event.target.value;
   if (event.target.name==='pact') pact=event.target.value;
-  if(event.target.name==='images'){const files=[...event.target.files],status=event.target.closest('form')?.querySelector('.upload-status');if(status)status.textContent=files.length===1?'تم اختيار صورة: '+files[0].name:'تم اختيار '+num(files.length)+' صور: '+files.map(file=>file.name).join('، ');}
   if (page.querySelector('#create-session-form')) page.dataset.content=home();
 });
-async function noteImage(file){const bitmap=await createImageBitmap(file);const scale=Math.min(1,1400/Math.max(bitmap.width,bitmap.height));const canvas=document.createElement('canvas');canvas.width=Math.round(bitmap.width*scale);canvas.height=Math.round(bitmap.height*scale);canvas.getContext('2d').drawImage(bitmap,0,0,canvas.width,canvas.height);bitmap.close?.();const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/webp',.76));if(!blob)throw new Error('تعذّر تجهيز الصورة.');return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(blob);});}
-async function uploadNotes(form,mode){if(notesBusy||!socket?.connected)return;const data=new FormData(form),files=[...form.elements.images.files],quick=mode==='quick';if(!files.length)return;if(!quick&&!data.get('folder'))return toast('اختر مجلدًا قبل رفع الصور.');notesBusy=true;const buttons=[...form.querySelectorAll('button')],status=form.querySelector('.upload-status');buttons.forEach(button=>button.disabled=true);try{for(const file of files){status.textContent='جارٍ تحميل: '+file.name;const image=await noteImage(file);const result=await socket.timeout(20000).emitWithAck('notesAdd',{folder:data.get('folder'),quick,image});if(result.error)throw new Error(result.error);notesData.notes=[result.note,...(notesData?.notes||[])];if(result.folder&&!notesData.folders.some(folder=>folder.id===result.folder.id))notesData.folders.push(result.folder);status.textContent='تم تحميل الصورة: '+file.name;toast('تم تحميل الصورة: '+file.name);}form.reset();render(true);}catch(error){toast(error.message||'تعذّر حفظ الصور.');}finally{notesBusy=false;buttons.forEach(button=>button.disabled=false);}}
 page.addEventListener('submit',event=>{
   const formElement = event.target;
-  if(formElement.id==='note-upload-form'){
-    event.preventDefault();uploadNotes(formElement,event.submitter?.value);return;
-  }
   if (formElement.id==='claim-referral-form') {
     event.preventDefault();
     emit('claimReferral',{code:new FormData(formElement).get('code')});

@@ -54,10 +54,8 @@ await db.exec(`
   CREATE INDEX IF NOT EXISTS room_pairs_players ON room_pairs(first_player,second_player);
   CREATE TABLE IF NOT EXISTS outcome_views(room TEXT NOT NULL,player TEXT NOT NULL,seen_at BIGINT NOT NULL,PRIMARY KEY(room,player));
   CREATE TABLE IF NOT EXISTS pending_direct_invites(recipient TEXT PRIMARY KEY,room TEXT NOT NULL,sender TEXT NOT NULL,minutes INTEGER NOT NULL,created_at BIGINT NOT NULL);
-  CREATE TABLE IF NOT EXISTS study_notes(id TEXT PRIMARY KEY,player TEXT NOT NULL,subject TEXT NOT NULL,chapter TEXT NOT NULL,image_data TEXT NOT NULL,created_at BIGINT NOT NULL);
-  CREATE INDEX IF NOT EXISTS study_notes_player_created ON study_notes(player,created_at);
-  CREATE TABLE IF NOT EXISTS note_folders(id TEXT PRIMARY KEY,player TEXT NOT NULL,subject TEXT NOT NULL,chapter TEXT NOT NULL,created_at BIGINT NOT NULL,UNIQUE(player,subject,chapter));
-  CREATE INDEX IF NOT EXISTS note_folders_player ON note_folders(player,created_at);
+  DROP TABLE IF EXISTS study_notes;
+  DROP TABLE IF EXISTS note_folders;
   CREATE TABLE IF NOT EXISTS appointments(id TEXT PRIMARY KEY,player TEXT NOT NULL,title TEXT NOT NULL,details TEXT NOT NULL DEFAULT '',due_at BIGINT NOT NULL,completed INTEGER NOT NULL DEFAULT 0,notified INTEGER NOT NULL DEFAULT 0,created_at BIGINT NOT NULL);
   CREATE INDEX IF NOT EXISTS appointments_player_due ON appointments(player,completed,due_at);
 `);
