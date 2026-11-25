@@ -157,13 +157,6 @@ function avatar(person) {
     : '<span class="'+classes+'" aria-hidden="true">'+(esc(person?.name?.[0]) || icon('user-round'))+'</span>';
 }
 function account() {
-  const p = profile || {};
-  document.querySelector('#admin-toggle').hidden = !p.admin || blocked;
-  const membershipControl=document.querySelector('#upgrade-top');
-  const tier=p.plan?.tier;
-  membershipControl.hidden=false;
-  membershipControl.classList.toggle('is-member',Boolean(tier&&tier!=='free'));
-  membershipControl.innerHTML=tier&&tier!=='free'?icon(plans[tier].icon)+' '+plans[tier].title:icon('crown')+' ترقية';
   const accountElement = document.querySelector('#account');
   const content = '';
   accountElement.hidden=true;
