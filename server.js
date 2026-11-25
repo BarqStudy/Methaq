@@ -369,39 +369,10 @@ io.on('connection', async(socket) => {
       try { const result=await fn(payload??{}); ack(result&&typeof result==='object'?{ok:true,...result}:{ok:true}); } catch (error) { console.error(event,error);ack({ error:error.message }); }
     });
   }
-  action('notesList',async()=>({notes:await db.all('SELECT id,subject,chapter,created_at FROM study_notes WHERE player=? ORDER BY created_at DESC',id),folders:await db.all('SELECT id,subject,chapter,created_at FROM note_folders WHERE player=? ORDER BY subject,chapter',id)}));
-  action('notesImage',async({note})=>{const row=typeof note==='string'&&await query('SELECT image_data FROM study_notes WHERE id=? AND player=?',note,id);if(!row)fail('الصورة غير موجودة.');return {image:row.image_data};});
-  action('notesImageUpdate',async({note,image})=>{if(typeof note!=='string'||typeof image!=='string'||image.length>1200000||!/^data:image\/(?:webp|jpeg|png);base64,[A-Za-z0-9+/=]+$/.test(image))fail('الصورة المعدلة غير صالحة أو حجمها كبير.');const updated=await run('UPDATE study_notes SET image_data=? WHERE id=? AND player=?',image,note,id);if(!updated.changes)fail('الصورة غير موجودة.');return {};});
   action('appointmentsList',async()=>({appointments:await db.all('SELECT id,title,details,due_at,completed,created_at FROM appointments WHERE player=? ORDER BY completed,due_at',id)}));
   action('appointmentAdd',async({title,details,dueAt})=>{title=typeof title==='string'?title.trim().slice(0,80):'';details=typeof details==='string'?details.trim().slice(0,240):'';dueAt=Number(dueAt);if(!title)fail('اكتب اسم الموعد.');if(!Number.isFinite(dueAt))fail('اختر تاريخ الموعد ووقته.');const appointment={id:randomUUID(),title,details,due_at:Math.round(dueAt),completed:0,created_at:clock.now()};await run('INSERT INTO appointments(id,player,title,details,due_at,completed,created_at) VALUES(?,?,?,?,?,?,?)',appointment.id,id,title,details,appointment.due_at,0,appointment.created_at);return {appointment};});
   action('appointmentToggle',async({appointment})=>{const target=typeof appointment==='string'&&await query('SELECT completed FROM appointments WHERE id=? AND player=?',appointment,id);if(!target)fail('الموعد غير موجود.');const completed=target.completed?0:1;await run('UPDATE appointments SET completed=? WHERE id=? AND player=?',completed,appointment,id);return {completed};});
   action('appointmentDelete',async({appointment})=>{if(typeof appointment!=='string'||!(await run('DELETE FROM appointments WHERE id=? AND player=?',appointment,id)).changes)fail('الموعد غير موجود.');return {};});
-  action('notesFolderAdd',async({subject,chapter})=>{
-    if(!telegramIdPattern.test(id))fail('افتح ميثاق من تليجرام لإنشاء مجلد.');
-    subject=typeof subject==='string'?subject.trim().slice(0,60):'';chapter=typeof chapter==='string'?chapter.trim().slice(0,80):'';
-    if(!subject||!chapter)fail('اكتب اسم المادة والشابتر.');
-    const existing=await query('SELECT id,subject,chapter,created_at FROM note_folders WHERE player=? AND subject=? AND chapter=?',id,subject,chapter);if(existing)return {folder:existing};
-    const folder={id:randomUUID(),subject,chapter,created_at:clock.now()};await run('INSERT INTO note_folders(id,player,subject,chapter,created_at) VALUES(?,?,?,?,?)',folder.id,id,subject,chapter,folder.created_at);return {folder};
-  });
-  action('notesFolderDelete',async({folder})=>{
-    const target=typeof folder==='string'&&await query('SELECT subject,chapter FROM note_folders WHERE id=? AND player=?',folder,id);if(!target)fail('المجلد غير موجود.');
-    let removed=0;await transaction(async()=>{removed=Number((await query('SELECT count(*) AS total FROM study_notes WHERE player=? AND subject=? AND chapter=?',id,target.subject,target.chapter))?.total||0);await run('DELETE FROM study_notes WHERE player=? AND subject=? AND chapter=?',id,target.subject,target.chapter);await run('DELETE FROM note_folders WHERE id=? AND player=?',folder,id);});return {removed};
-  });
-  action('notesAdd',async({folder,quick,image})=>{
-    if(!telegramIdPattern.test(id))fail('افتح ميثاق من تليجرام لحفظ ملاحظاتك.');
-    let subject='الإضافة السريعة',chapter='غير مصنف',assignedFolder;
-    if(quick){await run('INSERT INTO note_folders(id,player,subject,chapter,created_at) VALUES(?,?,?,?,?) ON CONFLICT(player,subject,chapter) DO NOTHING',randomUUID(),id,subject,chapter,clock.now());assignedFolder=await query('SELECT id,subject,chapter,created_at FROM note_folders WHERE player=? AND subject=? AND chapter=?',id,subject,chapter);}
-    else{const target=typeof folder==='string'&&await query('SELECT id,subject,chapter,created_at FROM note_folders WHERE id=? AND player=?',folder,id);if(!target)fail('اختر مجلدًا صالحًا.');assignedFolder=target;({subject,chapter}=target);}
-    if(typeof image!=='string'||image.length>1200000||!/^data:image\/(?:webp|jpeg|png);base64,[A-Za-z0-9+/=]+$/.test(image))fail('الصورة غير صالحة أو حجمها كبير.');
-    const note={id:randomUUID(),subject,chapter,image_data:image,created_at:clock.now()};
-    await run('INSERT INTO study_notes(id,player,subject,chapter,image_data,created_at) VALUES(?,?,?,?,?,?)',note.id,id,subject,chapter,image,note.created_at);
-    return {note,folder:assignedFolder};
-  });
-  action('notesDelete',async({note})=>{
-    if(typeof note!=='string')fail('الملاحظة غير صالحة.');
-    if(!(await run('DELETE FROM study_notes WHERE id=? AND player=?',note,id)).changes)fail('الملاحظة غير موجودة.');
-    return {ok:true};
-  });
   function adminAction(event, fn) {
     socket.on(event,async(payload,ack) => {
       if (typeof ack!=='function') return;
@@ -799,7 +770,6 @@ app.use((req,res,next)=>{
   next();
 });
 app.use('/icons',express.static('node_modules/lucide-static/icons'));
-app.use('/vendor/jspdf',express.static('node_modules/jspdf/dist'));
 app.use('/fonts',express.static('node_modules/@fontsource/ibm-plex-sans-arabic/files'));
 app.use('/fonts',express.static('node_modules/@fontsource/ibm-plex-sans-arabic'));
 app.use(express.static('public'));

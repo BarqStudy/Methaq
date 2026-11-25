@@ -51,7 +51,7 @@ const isPaid = () => ['pro','special'].includes(profile?.plan?.tier);
 let purchaseBusy = false;
 let activityDay;
 let adminData, adminSearch = '', adminBusy = false, blocked = false;
-let notesData=null,notesBusy=false,appointmentsData=null,appointmentsBusy=false;
+let appointmentsData=null,appointmentsBusy=false;
 let calendarCursor=null,calendarSelected=null;
 let appearanceRequest = 0, appearanceSaveTimer, visualUpdatePending = false;
 let tourIndex=-1,tourPositionTimer;
@@ -83,8 +83,7 @@ const tourSteps=[
   {selector:'.home-timer',title:'حدّد وقت التركيز',text:'حرّك مقبض الدائرة مع عقارب الساعة، أو اختر مدة سريعة أسفلها.'},
   {selector:'#create-session-form',title:'أنشئ غرفة تركيز',text:'الهدف اختياري. أنشئ الغرفة ثم أرسل رمزها أو دعوتها لشريكك.'},
   {selector:'[data-tab="rooms"]',title:'انضم إلى شريكك',text:'استخدم صفحة الغرف لإدخال الرمز أو قبول دعوة مباشرة.'},
-  {selector:'[data-tab="appointments"]',title:'مواعيدك أمامك',text:'أضف الاختبارات والتسليمات ورتبها حسب موعدها.'},
-  {selector:'[data-tab="notes"]',title:'ملاحظاتك مرتبة',text:'احفظ صور السبورة داخل المادة والشابتر، وستجد تاريخ الرفع الميلادي والهجري معها.'}
+  {selector:'[data-tab="appointments"]',title:'مواعيدك أمامك',text:'أضف الاختبارات والتسليمات ورتبها حسب موعدها.'}
 ];
 const tourStorageKey=()=>`methaq.tour.v1.${user?.id||guestId}`;
 function positionTour(){
@@ -812,7 +811,7 @@ function render(force=false) {
   const phase = !revisited && room?.phase;
   const key = [tab,phase,room?.id,isInvite()].join('|');
   if (force || key!==viewKey || ['active','lobby','outcome'].includes(phase)) {
-    const content = blocked ? '<div class="inner">'+heading('الحساب محظور','تواصل مع مشرف ميثاق للمساعدة.')+'</div>' : tab==='admin'?adminPage():tab==='rooms'?roomsPage():tab==='appointments'?appointmentsPage():tab==='notes'?notesPage():tab==='settings'?settingsPage():tab==='plans'?plansPage():phase==='lobby'?lobby():phase==='active'?active():phase==='outcome'?outcome():home();
+    const content = blocked ? '<div class="inner">'+heading('الحساب محظور','تواصل مع مشرف ميثاق للمساعدة.')+'</div>' : tab==='admin'?adminPage():tab==='rooms'?roomsPage():tab==='appointments'?appointmentsPage():tab==='settings'?settingsPage():tab==='plans'?plansPage():phase==='lobby'?lobby():phase==='active'?active():phase==='outcome'?outcome():home();
     if (page.dataset.content !== content) {
       const previous = document.activeElement;
       const selector = previous?.dataset.action && '[data-action="'+previous.dataset.action+'"][data-value="'+previous.dataset.value+'"]';
@@ -827,7 +826,6 @@ function render(force=false) {
     viewKey = key;
   }
   updateClock();
-  if(tab==='notes')requestAnimationFrame(hydrateNoteImages);
 }
 function formatClock(seconds) {
   return [Math.floor(seconds/60),seconds%60].map(value=>String(value).padStart(2,'0')).join(':');
@@ -945,7 +943,6 @@ document.addEventListener('click',event=>{
     if (tab!==nav.dataset.tab) {
       tab=nav.dataset.tab;
       render();
-      if(tab==='notes'&&notesData===null)loadNotes();
       if(tab==='appointments'&&appointmentsData===null)loadAppointments();
       window.scrollTo({top:0,behavior:'instant'});
     }
