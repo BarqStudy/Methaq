@@ -493,18 +493,26 @@ function countdownText(target, now = Date.now()) {
 function countdown(target, label = 'المتبقي') {
   return `<span class="countdown-chip"><small>${label}</small><strong data-countdown="${target}">${countdownText(target)}</strong></span>`;
 }
+const universityEventTypes = [
+  ['holiday','إجازة','palmtree',/إجازة/],
+  ['exam','اختبارات','clipboard-list',/اختبارات/],
+  ['deadline','موعد نهائي','clock-3',/آخر موعد/],
+  ['registration','إجراءات أكاديمية','file-text',/تسجيل|إضافة|طلبات|تحويل|قيد|معادلة/],
+  ['study','الدراسة','book-open',/.*/]
+];
 function universityPage() {
   const today = appointmentDayKey(Date.now());
   const terms = universityTerms.map(([name, events]) => `
     <details class="university-term">
-      <summary>${name} <small>· ${num(events.length)} موعد</small></summary>
+      <summary>${name} <small>· ${num(events.length)} موعد</small>${icon('chevron-down')}</summary>
       ${events.map(([title, start, end]) => {
+        const [type, category, symbol] = universityEventTypes.find(([, , , pattern]) => pattern.test(title));
         const active = end && start <= today && today <= end;
         const target = Date.parse((active ? end : start) + (active ? 'T23:59:59+03:00' : 'T00:00:00+03:00'));
         const label = !end && start === today ? '<span class="countdown-chip">اليوم</span>' : countdown(target, active ? 'حتى نهاية الفترة' : 'حتى الموعد');
-        return `<div class="university-date"><div><strong>${esc(title)}</strong><br>
+        return `<article class="university-date" data-event-type="${type}"><div><span class="university-category">${icon(symbol)}${category}</span><strong>${esc(title)}</strong>
           <time datetime="${start}" dir="ltr">${start}</time>${end ? ` إلى <time datetime="${end}" dir="ltr">${end}</time>` : ''}
-          </div>${label}</div>`;
+          </div>${label}</article>`;
       }).join('')}
     </details>`).join('');
   return `<div class="inner appointments-page">${heading('تقويم جامعة نجران','العام الجامعي 1448–1449 هـ')}<section class="panel stack university-calendar">${terms}</section></div>`;

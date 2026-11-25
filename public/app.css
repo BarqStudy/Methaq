@@ -890,6 +890,21 @@ body.viewer-open{overflow:hidden}.note-card img{cursor:zoom-in}.note-viewer{posi
 .dock button span{font-size:clamp(9px,2.65vw,12px);line-height:1.3}
 .dock button[aria-current=page]{font-weight:700}
 .top .top-inner{grid-template-columns:minmax(0,1fr) auto auto;grid-template-areas:"brand appearance settings"}
+.university-term summary{list-style:none;display:flex;align-items:center;gap:6px;min-height:48px}
+.university-term summary::-webkit-details-marker{display:none}
+.university-term summary>i{margin-inline-start:auto;width:16px;height:16px}
+.university-term[open] summary>i{transform:rotate(180deg)}
+.university-term .university-date{--event-tone:#4482c9;margin-block:0 9px;padding:11px;border:1px solid color-mix(in srgb,var(--event-tone) 32%,var(--line));border-inline-start:4px solid var(--event-tone);border-radius:13px;background:color-mix(in srgb,var(--event-tone) 12%,var(--surface))}
+.university-term .university-date[data-event-type=holiday]{--event-tone:#25a583}
+.university-term .university-date[data-event-type=exam]{--event-tone:#9764dc}
+.university-term .university-date[data-event-type=deadline]{--event-tone:#db7151}
+.university-term .university-date[data-event-type=registration]{--event-tone:#ca932b}
+.university-date>div{min-width:0}
+.university-date>div>strong{display:block;font-size:14px;margin-block:3px}
+.university-category{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text)}
+.university-category i{width:13px;height:13px;color:var(--event-tone)}
+.university-date .countdown-chip{min-width:0}
+@media(max-width:360px){.university-date .countdown-chip strong{white-space:normal}}
 .university-term{border:1px solid var(--line);border-radius:16px;padding:0 12px;background:var(--surface)}
 .university-term summary{cursor:pointer;padding-block:12px;font-weight:700}
 .university-term summary small,.university-date time{color:var(--muted);font-weight:400;font-size:12px}
