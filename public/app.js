@@ -228,14 +228,19 @@ function studyTabs() {
   </nav>`;
 }
 function dashboard() {
-  return `<div class="inner focus-home">
+  const service = (target, symbol, label, description) => `<button type="button" class="service-tile" ${target==='absenceCalculator'?'data-action':'data-tab'}="${target}">
+    <span class="service-icon">${icon(symbol)}</span>
+    <span class="service-copy"><strong>${label}</strong><small>${description}</small></span>
+    ${icon('chevron-left')}
+  </button>`;
+  return `<div class="inner focus-home student-dashboard">
     ${studentProfile()}
     <section class="panel stack university-services">
       <h2>خدمات طلاب جامعة نجران</h2>
-      <button type="button" class="secondary" data-tab="home">${icon('timer')} المذاكرة</button>
-      <button type="button" class="secondary" data-tab="university">${icon('calendar-days')} تقويم جامعة نجران</button>
-      <button type="button" class="secondary" data-tab="appointments">${icon('calendar-clock')} أحداثي</button>
-      ${button('absenceCalculator','احسب غيابي','secondary','calculator')}
+      ${service('home','timer','المذاكرة','ابدأ جلسة أو انضم لشريك')}
+      ${service('university','calendar-days','تقويم الجامعة','الاختبارات والحذف والإضافة')}
+      ${service('appointments','calendar-clock','أحداثي','أضف موعدًا وتابع الوقت المتبقي')}
+      ${service('absenceCalculator','calculator','احسب غيابي','اعرف نسبة غيابك والمتبقي')}
     </section>
   </div>`;
 }
