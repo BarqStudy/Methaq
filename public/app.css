@@ -904,6 +904,7 @@ body.viewer-open{overflow:hidden}.note-card img{cursor:zoom-in}.note-viewer{posi
 .university-category{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text)}
 .university-category i{width:13px;height:13px;color:var(--event-tone)}
 .university-date .countdown-chip{min-width:0}
+.university-term .university-date.is-ended{filter:grayscale(1)}
 @media(max-width:360px){.university-date .countdown-chip strong{white-space:normal}}
 .university-term{border:1px solid var(--line);border-radius:16px;padding:0 12px;background:var(--surface)}
 .university-term summary{cursor:pointer;padding-block:12px;font-weight:700}

@@ -508,9 +508,10 @@ function universityPage() {
       ${events.map(([title, start, end]) => {
         const [type, category, symbol] = universityEventTypes.find(([, , , pattern]) => pattern.test(title));
         const active = end && start <= today && today <= end;
+        const ended = (end || start) < today;
         const target = Date.parse((active ? end : start) + (active ? 'T23:59:59+03:00' : 'T00:00:00+03:00'));
-        const label = !end && start === today ? '<span class="countdown-chip">اليوم</span>' : countdown(target, active ? 'حتى نهاية الفترة' : 'حتى الموعد');
-        return `<article class="university-date" data-event-type="${type}"><div><span class="university-category">${icon(symbol)}${category}</span><strong>${esc(title)}</strong>
+        const label = ended ? '<span class="countdown-chip">انتهى</span>' : !end && start === today ? '<span class="countdown-chip">اليوم</span>' : countdown(target, active ? 'حتى نهاية الفترة' : 'حتى الموعد');
+        return `<article class="university-date${ended?' is-ended':''}" data-event-type="${type}"><div><span class="university-category">${icon(symbol)}${category}</span><strong>${esc(title)}</strong>
           <time datetime="${start}" dir="ltr">${start}</time>${end ? ` إلى <time datetime="${end}" dir="ltr">${end}</time>` : ''}
           </div>${label}</article>`;
       }).join('')}
