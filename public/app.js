@@ -43,7 +43,7 @@ document.querySelectorAll('i[data-icon]').forEach(i => i.style.setProperty('--ic
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num = (v) => Number(v || 0).toLocaleString('en-US');
 const remainingTime=(value,now=Date.now())=>{const minutes=Math.max(0,Math.ceil((value-now)/60000));const days=Math.floor(minutes/1440);const hours=Math.floor((minutes%1440)/60);const rest=minutes%60;return [days&&num(days)+' يوم',hours&&num(hours)+' ساعة',!days&&!hours&&num(rest)+' دقيقة'].filter(Boolean).join(' و ');};
-let room, socket, user, profile, bot, shortName, clockOffset = 0, chosen = 5, tab = invite?'rooms':'home', category = 0, goal = '', pact = '', inviteDismissed = false;
+let room, socket, user, profile, bot, shortName, clockOffset = 0, chosen = 5, tab = invite?'rooms':'dashboard', category = 0, goal = '', pact = '', inviteDismissed = false;
 let viewKey, noticeTimeout, revisited;
 let preparingInvite = false, incomingInvite;
 let appearanceOpen = false, checkoutOpen = false, expiryTimer, glassPreview, glassRequest = 0;
@@ -221,15 +221,28 @@ function dial(text,label,progress=0,interactive=false) {
   return `<div class="orbit"><div class="dial ${interactive?'interactive-dial':''}" style="--progress:${progress}" ${interactive?'role="slider" aria-label="مدة الجلسة" aria-valuemin="5" aria-valuemax="180" aria-valuenow="'+chosen+'" tabindex="0"':''}>${interactive?`<span class="dial-handle" style="${dialHandlePosition(progress)}" aria-hidden="true"></span>`:''}<div class="dial-content">${icon('lock-keyhole')}<strong class="digits" id="digits">${text}</strong>${label?`<small id="dial-label">${label}</small>`:''}</div></div>
   <span class="satellite one">${icon('user-round')}</span><span class="satellite two">${icon('user-round')}</span></div>`;
 }
-function home() {
+function studyTabs() {
+  return `<nav class="study-tabs" aria-label="المذاكرة">
+    <button type="button" data-tab="home" aria-current="${tab==='home'?'page':'false'}">${icon('timer')} مؤقت المذاكرة</button>
+    <button type="button" data-tab="rooms" aria-current="${tab==='rooms'?'page':'false'}">${icon('door-open')} انضم لغرفة</button>
+  </nav>`;
+}
+function dashboard() {
   return `<div class="inner focus-home">
     ${studentProfile()}
     <section class="panel stack university-services">
       <h2>خدمات طلاب جامعة نجران</h2>
+      <button type="button" class="secondary" data-tab="home">${icon('timer')} المذاكرة</button>
       <button type="button" class="secondary" data-tab="university">${icon('calendar-days')} تقويم جامعة نجران</button>
       <button type="button" class="secondary" data-tab="appointments">${icon('calendar-clock')} أحداثي</button>
       ${button('absenceCalculator','احسب غيابي','secondary','calculator')}
     </section>
+  </div>`;
+}
+function home() {
+  return `<div class="inner focus-home">
+    ${studyTabs()}
+    ${studentProfile()}
     <section class="panel preview home-timer" ${decorationStyle()} aria-labelledby="focus-timer-title">
       <div class="preview-top"><span class="tag"><span class="dot"></span> جلسة ثنائية</span></div>
       ${decorationIcon()}
@@ -242,7 +255,7 @@ function home() {
 }
 function roomsPage(){
   const joining=isInvite();
-  return `<div class="inner rooms-page">${heading('الغرف','انضم إلى شريكك برمز الغرفة أو عبر دعوة مباشرة.')}${pendingInvite()}
+  return `<div class="inner rooms-page">${studyTabs()}${pendingInvite()}
     ${joining?`<section class="panel join-invite-card"><span class="tile-icon">${icon('user-round-plus')}</span><h2>دعوة جاهزة للانضمام</h2><p class="bodycopy">اكتب هدفًا مختصرًا إن رغبت، ثم ادخل غرفة الاستعداد مباشرة.</p><form id="join-session-form"><label class="field">هدف الجلسة <small class="optional">اختياري</small><input maxlength="160" name="goal" placeholder="ماذا ستنجز؟" value="${esc(goal)}"></label><button class="primary wide">${icon('log-in')} الانضمام إلى الغرفة</button></form>${button('ignore','إلغاء الدعوة','plain','x')}</section>`:`<form id="join-code-form" class="panel room-code-join"><span class="room-join-icon">${icon('door-open')}</span><div><h2>انضم برمز الغرفة</h2><p class="bodycopy">اطلب الرمز المكوّن من 8 حروف وأرقام من شريكك.</p></div><label class="field"><input name="code" dir="ltr" maxlength="8" autocapitalize="characters" pattern="[A-Fa-f0-9]{8}" placeholder="رمز الغرفة" required></label><button class="primary wide">${icon('log-in')} دخول غرفة الاستعداد</button></form>`}
   </div>`;
 }
@@ -473,11 +486,14 @@ const universityTerms = [
     ['إغلاق أعمال الفصل الصيفي','2027-08-17']
   ]]
 ];
-function countdown(value) {
-  const today = Date.parse(appointmentDayKey(Date.now()));
-  const target = Date.parse(appointmentDayKey(value));
-  const days = Math.round((target - today) / 86400000);
-  return days > 0 ? `باقي ${num(days)} يوم` : days === 0 ? 'اليوم' : 'مضى';
+function countdownText(target, now = Date.now()) {
+  const remaining = target - now;
+  if (remaining <= 0) return 'مضى';
+  const hours = Math.floor(remaining / 3600000);
+  return hours ? `${num(Math.floor(hours / 24))} يوم · ${hours % 24} ساعة` : 'أقل من ساعة';
+}
+function countdown(target, label = 'المتبقي') {
+  return `<span class="countdown-chip"><small>${label}</small><strong data-countdown="${target}">${countdownText(target)}</strong></span>`;
 }
 function universityPage() {
   const today = appointmentDayKey(Date.now());
@@ -486,10 +502,11 @@ function universityPage() {
       <summary>${name} <small>· ${num(events.length)} موعد</small></summary>
       ${events.map(([title, start, end]) => {
         const active = end && start <= today && today <= end;
-        const label = active ? end === today ? 'ينتهي اليوم' : 'ينتهي بعد ' + Math.round((Date.parse(end) - Date.parse(today)) / 86400000) + ' يوم' : countdown(Date.parse(start));
+        const target = Date.parse((active ? end : start) + (active ? 'T23:59:59+03:00' : 'T00:00:00+03:00'));
+        const label = !end && start === today ? '<span class="countdown-chip">اليوم</span>' : countdown(target, active ? 'حتى نهاية الفترة' : 'حتى الموعد');
         return `<div class="university-date"><div><strong>${esc(title)}</strong><br>
           <time datetime="${start}" dir="ltr">${start}</time>${end ? ` إلى <time datetime="${end}" dir="ltr">${end}</time>` : ''}
-          </div><b>${label}</b></div>`;
+          </div>${label}</div>`;
       }).join('')}
     </details>`).join('');
   return `<div class="inner appointments-page">${heading('تقويم جامعة نجران','العام الجامعي 1448–1449 هـ')}<section class="panel stack university-calendar">${terms}</section></div>`;
@@ -536,7 +553,7 @@ function hijriDateToTimestamp(year,month,day,time){const formatter=new Intl.Date
 function appointmentForm(){const now=new Date(),tomorrow=new Date(now.getTime()+86400000),hijri=hijriParts(tomorrow),gregorian=[tomorrow.getFullYear(),String(tomorrow.getMonth()+1).padStart(2,'0'),String(tomorrow.getDate()).padStart(2,'0')].join('-');return `<form id="appointment-dialog-form" class="appointment-form appointment-dialog-form"><div class="calendar-choice" role="radiogroup" aria-label="نوع التاريخ"><label><input type="radio" name="calendar" value="gregorian" checked><span>${icon('calendar-days')} ميلادي</span></label><label><input type="radio" name="calendar" value="hijri"><span>${icon('moon')} هجري</span></label></div><label class="field appointment-full">اسم الموعد<input name="title" maxlength="80" placeholder="مثال: اختبار الأحياء" required></label><label class="field gregorian-date">اليوم<input name="gregorianDate" type="date" value="${gregorian}" required></label><div class="hijri-date" hidden><label class="field">اليوم<input name="hijriDay" type="number" inputmode="numeric" min="1" max="30" value="${hijri.day}"></label><label class="field">الشهر<select name="hijriMonth">${hijriMonths.map((month,index)=>`<option value="${index+1}" ${index+1===hijri.month?'selected':''}>${month}</option>`).join('')}</select></label><label class="field">السنة<input name="hijriYear" type="number" inputmode="numeric" min="1400" max="1600" value="${hijri.year}"></label></div><label class="field">الوقت<input name="time" type="time" value="09:00" required></label><label class="field appointment-details appointment-full">تفاصيل اختيارية<textarea name="details" maxlength="240" placeholder="المكان أو المطلوب تحضيره"></textarea></label><div class="actions appointment-full"><button class="primary">${icon('calendar-plus')} حفظ الموعد</button>${button('close','إلغاء','secondary')}</div></form>`;}
 async function loadAppointments(){if(appointmentsBusy||!socket?.connected)return;appointmentsBusy=true;try{const result=await socket.timeout(8000).emitWithAck('appointmentsList',{});if(result.error)throw new Error(result.error);appointmentsData=result.appointments||[];}catch(error){toast(error.message||'تعذّر تحميل المواعيد.');appointmentsData=[];}finally{appointmentsBusy=false;if(tab==='appointments')render(true);}}
 function liquidCalendar(entries){const today=appointmentDayKey(Date.now());if(!calendarCursor){const [year,month]=today.split('-').map(Number);calendarCursor={year,month};calendarSelected=today;}const {year,month}=calendarCursor,firstDay=new Date(Date.UTC(year,month-1,1)).getUTCDay(),days=new Date(Date.UTC(year,month,0)).getUTCDate(),monthDate=new Date(Date.UTC(year,month-1,15)),title=new Intl.DateTimeFormat('ar-SA-u-ca-gregory-nu-latn',{month:'long',year:'numeric',timeZone:'UTC'}).format(monthDate),hijriTitle=new Intl.DateTimeFormat('ar-SA-u-ca-islamic-umalqura-nu-latn',{month:'long',year:'numeric',timeZone:'UTC'}).format(monthDate),events=new Map();for(const item of entries){const key=appointmentDayKey(item.due_at);if(!events.has(key))events.set(key,[]);events.get(key).push(item);}const selectedEvents=events.get(calendarSelected)||[],selectedLabel=new Intl.DateTimeFormat('ar-SA-u-ca-gregory-nu-latn',{weekday:'long',day:'numeric',month:'long',timeZone:'UTC'}).format(new Date(calendarSelected+'T12:00:00Z'));return `<section class="liquid-calendar"><div class="calendar-glow one"></div><div class="calendar-glow two"></div><header class="calendar-head"><div><small>${hijriTitle}</small><h2>${title}</h2></div><nav aria-label="التنقل بين الأشهر"><button type="button" data-action="calendarMove" data-value="-1" aria-label="الشهر السابق">${icon('chevron-right')}</button><button type="button" data-action="calendarToday">اليوم</button><button type="button" data-action="calendarMove" data-value="1" aria-label="الشهر التالي">${icon('chevron-left')}</button></nav></header><div class="calendar-weekdays">${['الأحد','الاثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'].map(day=>`<span>${day.slice(0,2)}</span>`).join('')}</div><div class="calendar-grid">${'<i></i>'.repeat(firstDay)}${Array.from({length:days},(_,index)=>{const day=index+1,key=`${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`,count=events.get(key)?.length||0;return `<button type="button" data-action="calendarSelect" data-value="${key}" class="${key===today?'is-today ':''}${key===calendarSelected?'is-selected ':''}${count?'has-events':''}" aria-label="${day}${count?'، '+count+' مواعيد':''}"><span>${day}</span>${count?`<b>${count>3?'3+':count}</b>`:''}</button>`;}).join('')}</div><div class="calendar-agenda"><div class="agenda-head"><div><small>اليوم المحدد</small><strong>${selectedLabel}</strong></div><span>${num(selectedEvents.length)} موعد</span></div>${selectedEvents.length?`<div class="agenda-chips">${selectedEvents.map(item=>`<button type="button" data-action="confirmDeleteAppointment" data-value="${item.id}"><time>${new Intl.DateTimeFormat('en-US',{hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Riyadh'}).format(new Date(item.due_at))}</time><strong>${esc(item.title)}</strong></button>`).join('')}</div>`:'<p class="agenda-empty">يوم هادئ — لا توجد مواعيد.</p>'}</div></section>`;}
-function appointmentsPage(){const entries=appointmentsData||[],upcoming=entries.filter(item=>!item.completed),completed=entries.filter(item=>item.completed);const rows=list=>list.map(item=>`<article class="panel appointment-card ${item.completed?'is-completed':''}"><button type="button" class="appointment-check" data-action="toggleAppointment" data-value="${item.id}" aria-label="${item.completed?'إعادة الموعد':'إنجاز الموعد'}">${icon(item.completed?'circle-check-big':'circle')}</button><div><strong>${esc(item.title)}</strong><time>${icon('calendar-clock')} ${appointmentDate(item.due_at)}</time>${item.details?`<p>${esc(item.details)}</p>`:''}</div><div class="event-countdown"><b>${countdown(item.due_at)}</b>${button('confirmDeleteAppointment','حذف','plain','trash-2',item.id)}</div></article>`).join('');return `<div class="inner appointments-page">${heading('أحداثي','مواعيدك الشخصية والوقت المتبقي عليها.')}${liquidCalendar(entries)}<button type="button" class="primary wide add-appointment" data-action="newAppointment">${icon('calendar-plus')} أضف حدث</button>${appointmentsData===null?'<section class="panel">جارٍ تحميل مواعيدك…</section>':`<section class="appointments-group"><div class="appointments-title"><h2>القادمة</h2><span>${num(upcoming.length)}</span></div><div class="appointments-list">${rows(upcoming)||'<div class="panel appointments-empty">'+icon('calendar-check')+'<p>لا توجد مواعيد قادمة.</p></div>'}</div></section>${completed.length?`<details class="completed-appointments"><summary>المواعيد المنجزة (${num(completed.length)})</summary><div class="appointments-list">${rows(completed)}</div></details>`:''}`}</div>`;}
+function appointmentsPage(){const entries=appointmentsData||[],upcoming=entries.filter(item=>!item.completed),completed=entries.filter(item=>item.completed);const rows=list=>list.map(item=>`<article class="panel appointment-card ${item.completed?'is-completed':''}"><button type="button" class="appointment-check" data-action="toggleAppointment" data-value="${item.id}" aria-label="${item.completed?'إعادة الموعد':'إنجاز الموعد'}">${icon(item.completed?'circle-check-big':'circle')}</button><div><strong>${esc(item.title)}</strong><time>${icon('calendar-clock')} ${appointmentDate(item.due_at)}</time>${item.details?`<p>${esc(item.details)}</p>`:''}</div><div class="event-countdown">${item.completed?'':countdown(Number(item.due_at))}${button('confirmDeleteAppointment','حذف','plain','trash-2',item.id)}</div></article>`).join('');return `<div class="inner appointments-page">${heading('أحداثي','مواعيدك الشخصية والوقت المتبقي عليها.')}${liquidCalendar(entries)}<button type="button" class="primary wide add-appointment" data-action="newAppointment">${icon('calendar-plus')} أضف حدث</button>${appointmentsData===null?'<section class="panel">جارٍ تحميل مواعيدك…</section>':`<section class="appointments-group"><div class="appointments-title"><h2>القادمة</h2><span>${num(upcoming.length)}</span></div><div class="appointments-list">${rows(upcoming)||'<div class="panel appointments-empty">'+icon('calendar-check')+'<p>لا توجد مواعيد قادمة.</p></div>'}</div></section>${completed.length?`<details class="completed-appointments"><summary>المواعيد المنجزة (${num(completed.length)})</summary><div class="appointments-list">${rows(completed)}</div></details>`:''}`}</div>`;}
 async function loadNotes(){if(notesBusy||!socket?.connected)return;notesBusy=true;try{const result=await socket.timeout(8000).emitWithAck('notesList',{});if(result.error)throw new Error(result.error);notesData={notes:result.notes||[],folders:result.folders||[]};}catch(error){toast(error.message||'تعذّر تحميل الملاحظات.');notesData={notes:[],folders:[]};}finally{notesBusy=false;if(tab==='notes')render(true);}}
 function notesPage(){
   const groups=new Map(),folderIds=new Map(),notes=notesData?.notes||[],folders=notesData?.folders||[];for(const folder of folders){if(!groups.has(folder.subject))groups.set(folder.subject,new Map());groups.get(folder.subject).set(folder.chapter,[]);folderIds.set(folder.subject+'\0'+folder.chapter,folder.id);}for(const note of notes){if(!groups.has(note.subject))groups.set(note.subject,new Map());const chapters=groups.get(note.subject);if(!chapters.has(note.chapter))chapters.set(note.chapter,[]);chapters.get(note.chapter).push(note);}
@@ -912,12 +929,12 @@ function render(force=false) {
   document.querySelectorAll('[data-tab]').forEach(b => {
     if (room?.phase==='active' && b.dataset.tab!=='home') b.setAttribute('aria-disabled','true');
     else b.removeAttribute('aria-disabled');
-    if (b.dataset.tab===tab) b.setAttribute('aria-current','page'); else b.removeAttribute('aria-current');
+    if (b.dataset.tab===tab || (tab==='rooms' && b.closest('.dock') && b.dataset.tab==='home')) b.setAttribute('aria-current','page'); else b.removeAttribute('aria-current');
   });
   const phase = !revisited && room?.phase;
   const key = [tab,phase,room?.id,isInvite()].join('|');
   if (force || key!==viewKey || ['active','lobby','outcome'].includes(phase)) {
-    const content = blocked ? '<div class="inner">'+heading('الحساب محظور','تواصل مع مشرف ميثاق للمساعدة.')+'</div>' : tab==='admin'?adminPage():tab==='rooms'?roomsPage():tab==='university'?universityPage():tab==='appointments'?appointmentsPage():tab==='settings'?settingsPage():tab==='plans'?plansPage():phase==='lobby'?lobby():phase==='active'?active():phase==='outcome'?outcome():home();
+    const content = blocked ? '<div class="inner">'+heading('الحساب محظور','تواصل مع مشرف ميثاق للمساعدة.')+'</div>' : tab==='dashboard'?dashboard():tab==='admin'?adminPage():tab==='rooms'?roomsPage():tab==='university'?universityPage():tab==='appointments'?appointmentsPage():tab==='settings'?settingsPage():tab==='plans'?plansPage():phase==='lobby'?lobby():phase==='active'?active():phase==='outcome'?outcome():home();
     if (page.dataset.content !== content) {
       const previous = document.activeElement;
       const selector = previous?.dataset.action && '[data-action="'+previous.dataset.action+'"][data-value="'+previous.dataset.value+'"]';
@@ -937,6 +954,11 @@ function formatClock(seconds) {
   return [Math.floor(seconds/60),seconds%60].map(value=>String(value).padStart(2,'0')).join(':');
 }
 function updateClock() {
+  const countdownNow = Date.now();
+  document.querySelectorAll('[data-countdown]').forEach(element=>{
+    const label = countdownText(Number(element.dataset.countdown),countdownNow);
+    if (element.textContent!==label) element.textContent=label;
+  });
   const current=serverNow();
   document.querySelectorAll('[data-point-expiry]').forEach(element=>{const label=element.querySelector('b');if(label)label.textContent=remainingTime(Number(element.dataset.pointExpiry),current);});
   document.querySelectorAll('[data-membership-until]').forEach(element=>element.textContent=remainingTime(Number(element.dataset.membershipUntil),current));
